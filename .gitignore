@@ -41,3 +41,11 @@ app-example
 # generated native folders
 /ios
 /android
+
+# IDE
+.vscode/
+.idea/
+
+# ai
+.claude/
+CLAUDE.md
