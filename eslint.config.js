@@ -121,6 +121,7 @@ module.exports = defineConfig([
   prettierRecommended,
 
   {
-    ignores: ['dist/*'],
+    // dist — сборка; design — reference-прототипы дизайна (browser JSX/HTML), не исходники приложения.
+    ignores: ['dist/*', 'design/**'],
   },
 ]);

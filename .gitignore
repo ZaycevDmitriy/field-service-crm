@@ -48,6 +48,18 @@ app-example
 !.vscode/extensions.json
 .idea/
 
+# temp
+docs/
+
 # ai
 .claude/
+.mcp.json
 CLAUDE.md
+.codex/
+.ai-factory/
+.opencode/
+.ai-factory.json
+AGENTS.md
+
+# design handoff (reference-прототипы, не исходники приложения)
+design/
