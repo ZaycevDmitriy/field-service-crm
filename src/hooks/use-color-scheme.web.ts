@@ -1,15 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
 
+// Подписка-заглушка: значение гидрации не меняется после монтирования.
+const emptySubscribe = () => () => {};
+
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
+ * Поддержка статического рендеринга: на сервере значение всегда 'light',
+ * на клиенте после гидрации — реальная цветовая схема.
  */
 export function useColorScheme(): 'light' | 'dark' {
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
+  // getServerSnapshot возвращает false (сервер и первый рендер при гидрации),
+  // getSnapshot — true (клиент), что даёт перерисовку без setState в эффекте.
+  const hasHydrated = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
 
   const colorScheme = useRNColorScheme();
 

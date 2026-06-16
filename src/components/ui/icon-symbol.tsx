@@ -6,7 +6,10 @@ import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
 // В expo-symbols 56 name стал SFSymbol | { ios?; android?; web? } — берём строковую часть для ключа.
-type IconMapping = Record<Extract<SymbolViewProps['name'], string>, ComponentProps<typeof MaterialIcons>['name']>;
+type IconMapping = Record<
+  Extract<SymbolViewProps['name'], string>,
+  ComponentProps<typeof MaterialIcons>['name']
+>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
