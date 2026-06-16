@@ -1,21 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { DashboardPage } from '@/pages/dashboard';
 
-// Временная заглушка. Полноценный DashboardPage появится в шаге C (pages/dashboard).
-export default function HomeScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Главная</Text>
-    </View>
-  );
+// Тонкий route Expo Router: рендерит страницу из слоя pages.
+export default function DashboardRoute() {
+  return <DashboardPage />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 20,
-  },
-});
