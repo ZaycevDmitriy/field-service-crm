@@ -1,4 +1,4 @@
-// Fallback for using MaterialIcons on Android and web.
+// Фолбэк: MaterialIcons на Android и web.
 
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
@@ -13,9 +13,9 @@ type IconMapping = Record<
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ * Добавляйте сюда сопоставления SF Symbols → Material Icons.
+ * - Material Icons — каталог иконок: https://icons.expo.fyi.
+ * - SF Symbols — приложение: https://developer.apple.com/sf-symbols/.
  */
 const MAPPING = {
   'house.fill': 'home',
@@ -25,9 +25,9 @@ const MAPPING = {
 } as IconMapping;
 
 /**
- * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
+ * Иконка: нативные SF Symbols на iOS, Material Icons на Android и web.
+ * Обеспечивает единообразный вид на платформах и оптимальный расход ресурсов.
+ * Имена `name` основаны на SF Symbols и требуют ручного маппинга на Material Icons.
  */
 export function IconSymbol({
   name,
