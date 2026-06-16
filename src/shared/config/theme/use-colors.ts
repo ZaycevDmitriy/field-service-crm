@@ -1,5 +1,3 @@
-import { useColorScheme } from 'react-native';
-
 import {
   darkColors,
   darkOrderStatusColors,
@@ -8,8 +6,9 @@ import {
   type IColors,
   type IOrderStatusColors,
 } from './colors';
+import { useColorScheme } from './use-color-scheme';
 
-// Возвращает активную палитру по системной цветовой схеме; light — fallback при unspecified/null.
+// Возвращает активную палитру по системной цветовой схеме (нормализация и web-гидрация — в useColorScheme).
 export function useColors(): IColors {
   const scheme = useColorScheme();
 

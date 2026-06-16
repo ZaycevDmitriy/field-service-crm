@@ -8,6 +8,7 @@ export {
   type IOrderStatusColors,
 } from './colors';
 export { useColors, useOrderStatusColors } from './use-colors';
+export { useColorScheme } from './use-color-scheme';
 export { Spacing } from './spacing';
 export { Radius } from './radius';
 export { FontSize, FontWeight } from './typography';
