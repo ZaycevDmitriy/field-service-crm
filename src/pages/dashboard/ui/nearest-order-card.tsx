@@ -2,7 +2,7 @@ import { type FC } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { OrderStatusBadge, type IServiceOrder } from '@/entities/order';
-import { Radius, Spacing, useColors } from '@/shared/config';
+import { Radius, Shadows, Spacing, useColors } from '@/shared/config';
 import { Button, IconSymbol, Text } from '@/shared/ui';
 
 export interface INearestOrderCardProps {
@@ -68,10 +68,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius['18'],
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
-    // Усиленная тень hero (тяжелее карточной) — через boxShadow (New Architecture).
-    boxShadow: [
-      { offsetX: 0, offsetY: 8, blurRadius: 24, spreadDistance: 0, color: 'rgba(0,0,0,0.12)' },
-    ],
+    // Усиленная тень hero (тяжелее карточной) — из токена темы.
+    ...Shadows.hero,
   },
   rail: {
     width: 4,
