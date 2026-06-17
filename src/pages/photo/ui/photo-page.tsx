@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { type FC, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PhotoPreview } from '@/features/photo-capture';
@@ -124,14 +124,9 @@ const PreviewScreen: FC<IPreviewScreenProps> = ({ onBack, onSave, onRetake }) =>
       style={[styles.previewRoot, { backgroundColor: colors.background, paddingTop: insets.top }]}
     >
       <ScreenHeader title="Предпросмотр" onBack={onBack} />
-      <ScrollView
-        contentContainerStyle={[
-          styles.previewScroll,
-          { paddingBottom: insets.bottom + Spacing.md },
-        ]}
-      >
+      <View style={[styles.previewBody, { paddingBottom: insets.bottom + Spacing.md }]}>
         <PhotoPreview onSave={onSave} onRetake={onRetake} />
-      </ScrollView>
+      </View>
     </View>
   );
 };
@@ -240,7 +235,8 @@ const styles = StyleSheet.create({
   previewRoot: {
     flex: 1,
   },
-  previewScroll: {
+  previewBody: {
+    flex: 1,
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xs,
   },

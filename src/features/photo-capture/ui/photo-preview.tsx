@@ -9,7 +9,8 @@ export interface IPhotoPreviewProps {
   onRetake: () => void;
 }
 
-// Предпросмотр снимка (заглушка Phase 2): плейсхолдер 4:5, поле комментария, действия «Сохранить»/«Переснять».
+// Предпросмотр снимка (заглушка Phase 2): плейсхолдер-превью растягивается на доступную высоту,
+// поле комментария и действия «Сохранить»/«Переснять» закреплены снизу (без прокрутки).
 // Комментарий — временное состояние экрана, хранится в local state (PDR §13).
 export const PhotoPreview: FC<IPhotoPreviewProps> = ({ onSave, onRetake }) => {
   const colors = useColors();
@@ -40,11 +41,12 @@ export const PhotoPreview: FC<IPhotoPreviewProps> = ({ onSave, onRetake }) => {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     gap: Spacing.md,
   },
   preview: {
+    flex: 1,
     width: '100%',
-    aspectRatio: 4 / 5,
     borderRadius: Radius.lg,
   },
   commentBlock: {
