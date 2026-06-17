@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { type ComponentProps, type FC } from 'react';
+import { type ComponentProps, type FC, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,8 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  // Реальная высота фиксированного CTA-бара — для точного нижнего отступа скролла (New и InProgress разной высоты).
+  const [ctaHeight, setCtaHeight] = useState(0);
   const order = MOCK_SERVICE_ORDERS.find((item) => item.id === orderId);
 
   const handleBack = () => router.back();
@@ -67,7 +69,7 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingBottom: hasCta ? 120 : insets.bottom + Spacing.md },
+          { paddingBottom: hasCta ? ctaHeight + Spacing.md : insets.bottom + Spacing.md },
         ]}
       >
         <View style={styles.titleBlock}>
@@ -170,6 +172,7 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
 
       {hasCta ? (
         <View
+          onLayout={(event) => setCtaHeight(event.nativeEvent.layout.height)}
           style={[
             styles.cta,
             {
