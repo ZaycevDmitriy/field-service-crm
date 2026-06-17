@@ -21,6 +21,7 @@ export const OrderCard: FC<IOrderCardProps> = ({ order, onPress }) => {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
       style={({ pressed }) => [
         styles.card,
         {

@@ -26,6 +26,7 @@ export const QuickActionButton: FC<IQuickActionButtonProps> = ({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.pressable, { opacity: pressed ? 0.85 : 1 }]}
     >
       <Card style={styles.card}>

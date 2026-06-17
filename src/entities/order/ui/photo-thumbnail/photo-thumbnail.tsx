@@ -14,10 +14,13 @@ export interface IPhotoThumbnailProps {
 // показывается surfaceMuted-плейсхолдер; реальные снимки появятся в Phase 5.
 export const PhotoThumbnail: FC<IPhotoThumbnailProps> = ({ photo }) => {
   const colors = useColors();
+  // В Phase 2 URI — mock-плейсхолдер; невалидную схему в expo-image не передаём (иначе ошибки загрузки).
+  // Реальные http(s)/file-снимки появятся в Phase 5 и отрисуются поверх surfaceMuted-фона.
+  const source = /^(https?:|file:)/.test(photo.uri) ? { uri: photo.uri } : null;
 
   return (
     <Image
-      source={{ uri: photo.uri }}
+      source={source}
       style={[styles.thumb, { backgroundColor: colors.surfaceMuted }]}
       contentFit="cover"
     />
