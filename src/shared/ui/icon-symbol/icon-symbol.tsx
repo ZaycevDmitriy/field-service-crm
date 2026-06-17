@@ -24,7 +24,25 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
-} as IconMapping;
+  'chevron.left': 'chevron-left',
+  xmark: 'close',
+  magnifyingglass: 'search',
+  mappin: 'place',
+  clock: 'schedule',
+  'arrow.triangle.turn.up.right.diamond.fill': 'directions',
+  'camera.fill': 'photo-camera',
+  'qrcode.viewfinder': 'qr-code-scanner',
+  'externaldrive.fill': 'storage',
+  'wifi.slash': 'wifi-off',
+  'exclamationmark.triangle.fill': 'error-outline',
+  'arrow.clockwise': 'refresh',
+  plus: 'add',
+  checkmark: 'check',
+  'arrow.down.circle': 'file-download',
+  'trash.fill': 'delete',
+  'bolt.fill': 'flash-on',
+  'arrow.triangle.2.circlepath.camera.fill': 'flip-camera-ios',
+} satisfies Partial<IconMapping>;
 
 /**
  * Иконка: нативные SF Symbols на iOS, Material Icons на Android и web.
