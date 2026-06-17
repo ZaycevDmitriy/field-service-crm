@@ -43,6 +43,11 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   search: '',
 
   loadOrders: async () => {
+    // Guard от повторного входа: дубль вызова во время загрузки (в т.ч. StrictMode в dev) — no-op.
+    // Первый set({ loading: true }) проходит синхронно до await, поэтому второй вызов отсекается здесь.
+    if (get().loading) {
+      return;
+    }
     set({ loading: true });
     try {
       const orders = await orderMockService.getOrders();
