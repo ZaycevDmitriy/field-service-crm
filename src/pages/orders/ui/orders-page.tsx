@@ -1,37 +1,64 @@
 import { useRouter } from 'expo-router';
-import { type FC, type ReactNode, useState } from 'react';
+import { type FC, type ReactNode, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 
-import { OrdersDevStateSwitcher, type OrdersViewState } from './orders-dev-state-switcher';
 import { OrdersSkeletonList } from './orders-skeleton-list';
 
-import { MOCK_SERVICE_ORDERS, OrderCard, OrderFilterEnum } from '@/entities/order';
-import { OrderStatusFilter } from '@/features/order-filter';
+import { OrderCard, useOrdersStore } from '@/entities/order';
+import { getFilteredOrders, OrderStatusFilter } from '@/features/order-filter';
 import { OrderSearch } from '@/features/order-search';
 import { Spacing } from '@/shared/config';
-import { EmptyState, OfflineBanner, Screen, Text } from '@/shared/ui';
+import { useAppStore } from '@/shared/model';
+import { EmptyState, ErrorState, OfflineBanner, Screen, Text } from '@/shared/ui';
 
-// Экран «Заявки»: поиск, фильтр статусов и список карточек со всеми состояниями.
-// Фильтрация/поиск — логика Phase 3; в Phase 2 список статичен (все mock-заявки).
+// Экран «Заявки»: поиск, фильтр статусов и список карточек. Данные и состояния — из стора (Phase 3).
 export const OrdersPage: FC = () => {
   const router = useRouter();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<OrderFilterEnum>(OrderFilterEnum.All);
-  // DEV: состояние экрана через переключатель (удаляется в Phase 3).
-  const [devState, setDevState] = useState<OrdersViewState>('content');
+  const { orders, loading, error, filter, search } = useOrdersStore(
+    useShallow((state) => ({
+      orders: state.orders,
+      loading: state.loading,
+      error: state.error,
+      filter: state.filter,
+      search: state.search,
+    })),
+  );
+  const setFilter = useOrdersStore((state) => state.setFilter);
+  const setSearch = useOrdersStore((state) => state.setSearch);
+  const loadOrders = useOrdersStore((state) => state.loadOrders);
+  const offline = useAppStore((state) => state.offline);
+
+  // Производный список считаем чистой функцией от входов стора (решение 4 плана).
+  const filteredOrders = useMemo(
+    () => getFilteredOrders(orders, filter, search),
+    [orders, filter, search],
+  );
 
   const handleOpenOrder = (orderId: string) => {
     router.push({ pathname: '/orders/[orderId]', params: { orderId } });
   };
-  // Обновление списка — Phase 3 (реальные данные). Пока no-op.
-  const handleRefresh = () => undefined;
+  const handleRefresh = () => {
+    loadOrders();
+  };
 
   const renderBody = (): ReactNode => {
-    if (devState === 'loading') {
+    if (loading) {
       return <OrdersSkeletonList />;
     }
 
-    if (devState === 'empty') {
+    if (error) {
+      return (
+        <ErrorState
+          title="Не удалось загрузить заявки"
+          description="Проверьте подключение и попробуйте снова."
+          actionLabel="Повторить"
+          onRetry={handleRefresh}
+        />
+      );
+    }
+
+    if (orders.length === 0) {
       return (
         <EmptyState
           icon="list.bullet"
@@ -44,12 +71,22 @@ export const OrdersPage: FC = () => {
       );
     }
 
+    if (filteredOrders.length === 0) {
+      return (
+        <EmptyState
+          icon="magnifyingglass"
+          title="Ничего не найдено"
+          description="Измените запрос или фильтр."
+        />
+      );
+    }
+
     return (
       <View style={styles.list}>
         <Text size="13" color="textSecondary" style={styles.eyebrow}>
           Сегодня
         </Text>
-        {MOCK_SERVICE_ORDERS.map((order) => (
+        {filteredOrders.map((order) => (
           <OrderCard key={order.id} order={order} onPress={() => handleOpenOrder(order.id)} />
         ))}
       </View>
@@ -62,10 +99,9 @@ export const OrdersPage: FC = () => {
         <Text size="xl" weight="bold">
           Заявки
         </Text>
-        <OrdersDevStateSwitcher value={devState} onChange={setDevState} />
         <OrderSearch value={search} onChangeText={setSearch} />
-        <OrderStatusFilter value={filter} onChange={setFilter} />
-        {devState === 'offline' ? <OfflineBanner /> : null}
+        <OrderStatusFilter value={filter} onChange={setFilter} orders={orders} />
+        {offline ? <OfflineBanner /> : null}
         {renderBody()}
       </View>
     </Screen>

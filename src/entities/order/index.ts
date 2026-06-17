@@ -1,11 +1,12 @@
 // Публичный API слайса order.
-export type { IServiceOrder, IServiceOrderPhoto } from './model';
+export type { IServiceOrder, IServiceOrderPhoto, IOrdersStore } from './model';
 export {
   ServiceOrderStatusEnum,
   OrderStatusLabel,
   OrderFilterEnum,
   OrderFilterLabel,
-  MOCK_SERVICE_ORDERS,
+  useOrdersStore,
+  getNearestOrder,
 } from './model';
 export {
   OrderStatusBadge,

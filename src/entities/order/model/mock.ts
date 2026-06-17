@@ -1,8 +1,8 @@
 import { ServiceOrderStatusEnum } from './order-status';
 import type { IServiceOrder } from './types';
 
-// Статичные mock-заявки для Phase 2 (UI на mock-данных). В Phase 3 переедут в
-// `entities/order/api/orderMockService`. Ровно 6 заявок: 2 New / 3 InProgress / 1 Done / 0 Cancelled —
+// Статичные mock-заявки. Данные обёрнуты `entities/order/api/orderMockService` (стор грузит через сервис);
+// в Phase 4 источник заменится на SQLite. Ровно 6 заявок: 2 New / 3 InProgress / 1 Done / 0 Cancelled —
 // совпадает со статичными счётчиками дашборда и фильтра «Все(6)/Новые(2)/В работе(3)/Готово(1)/Отменено(—)».
 // MOCK_SERVICE_ORDERS[0] — ближайшая заявка (hero дашборда).
 export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [

@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
-import type { FC } from 'react';
+import { type FC, useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
+import { useOrdersStore } from '@/entities/order';
 import { useColorScheme } from '@/shared/config';
 
 export const unstable_settings = {
@@ -13,6 +14,12 @@ export const unstable_settings = {
 
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
+
+  // Однократная гидрация стора при старте (не-реактивный getState). Задел под initDatabase (Phase 4).
+  // loadOrders идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
+  useEffect(() => {
+    useOrdersStore.getState().loadOrders();
+  }, []);
 
   return (
     <SafeAreaProvider>
