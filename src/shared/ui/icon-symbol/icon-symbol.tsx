@@ -42,6 +42,7 @@ const MAPPING = {
   'trash.fill': 'delete',
   'bolt.fill': 'flash-on',
   'arrow.triangle.2.circlepath.camera.fill': 'flip-camera-ios',
+  'photo.on.rectangle': 'photo-library',
 } satisfies Partial<IconMapping>;
 
 /**

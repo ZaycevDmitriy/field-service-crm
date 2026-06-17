@@ -1,1 +1,1 @@
-export { PhotoPage, type IPhotoPageProps } from './ui/photo-page';
+export { PhotoPage } from './ui/photo-page';

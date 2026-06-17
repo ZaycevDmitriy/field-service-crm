@@ -17,3 +17,4 @@ export { IconButton, type IIconButtonProps } from './icon-button';
 export { SearchInput, type ISearchInputProps } from './search-input';
 export { DiagnosticCard, type IDiagnosticCardProps } from './diagnostic-card';
 export { DiagnosticRow, type IDiagnosticRowProps } from './diagnostic-row';
+export { ScreenHeader, type IScreenHeaderProps } from './screen-header';
