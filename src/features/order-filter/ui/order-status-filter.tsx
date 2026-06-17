@@ -2,7 +2,6 @@ import { type FC } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
 import {
-  MOCK_SERVICE_ORDERS,
   OrderFilterEnum,
   OrderFilterLabel,
   ServiceOrderStatusEnum,
@@ -14,8 +13,8 @@ import { Chip } from '@/shared/ui';
 export interface IOrderStatusFilterProps {
   value: OrderFilterEnum;
   onChange: (filter: OrderFilterEnum) => void;
-  // Источник счётчиков; по умолчанию — все mock-заявки.
-  orders?: IServiceOrder[];
+  // Источник счётчиков — заявки из стора (страница всегда передаёт их).
+  orders: IServiceOrder[];
 }
 
 // Порядок чипов фильтра: Все, Новые, В работе, Готово, Отменено.
@@ -28,11 +27,7 @@ const FILTERS: OrderFilterEnum[] = [
 ];
 
 // Горизонтальный фильтр статусов со счётчиками. Счётчики считаются из заявок (совпадают с дизайном 6/2/3/1/0).
-export const OrderStatusFilter: FC<IOrderStatusFilterProps> = ({
-  value,
-  onChange,
-  orders = MOCK_SERVICE_ORDERS,
-}) => {
+export const OrderStatusFilter: FC<IOrderStatusFilterProps> = ({ value, onChange, orders }) => {
   const countByStatus = (status: ServiceOrderStatusEnum): number =>
     orders.filter((order) => order.status === status).length;
 

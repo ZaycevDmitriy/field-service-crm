@@ -1,6 +1,7 @@
-import { type FC } from 'react';
+import { type FC, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ServiceOrderStatusEnum, useOrdersStore } from '@/entities/order';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Card, Text } from '@/shared/ui';
 
@@ -25,9 +26,21 @@ const Stat: FC<IStatProps> = ({ color, value, label }) => {
   );
 };
 
-// Inline-полоса статистики дня (одна строка в Card). Значения статичны по дизайну §12.1.
+// Inline-полоса статистики дня (одна строка в Card). Счётчики считаются из стора (решение 4 плана).
 export const StatsStrip: FC = () => {
   const colors = useColors();
+  const orders = useOrdersStore((state) => state.orders);
+
+  const counts = useMemo(() => {
+    const countByStatus = (status: ServiceOrderStatusEnum): number =>
+      orders.filter((order) => order.status === status).length;
+
+    return {
+      new: countByStatus(ServiceOrderStatusEnum.New),
+      inProgress: countByStatus(ServiceOrderStatusEnum.InProgress),
+      done: countByStatus(ServiceOrderStatusEnum.Done),
+    };
+  }, [orders]);
 
   return (
     <Card>
@@ -36,9 +49,9 @@ export const StatsStrip: FC = () => {
           Сегодня
         </Text>
         <View style={styles.stats}>
-          <Stat color={colors.primary} value={2} label="новых" />
-          <Stat color={colors.warning} value={3} label="в работе" />
-          <Stat color={colors.success} value={1} label="готово" />
+          <Stat color={colors.primary} value={counts.new} label="новых" />
+          <Stat color={colors.warning} value={counts.inProgress} label="в работе" />
+          <Stat color={colors.success} value={counts.done} label="готово" />
         </View>
       </View>
     </Card>

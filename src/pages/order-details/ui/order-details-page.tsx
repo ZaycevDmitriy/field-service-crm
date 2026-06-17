@@ -4,11 +4,12 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  MOCK_SERVICE_ORDERS,
   OrderPhotoList,
   OrderStatusBadge,
   ServiceOrderStatusEnum,
+  useOrdersStore,
 } from '@/entities/order';
+import { useOrderStatusActions } from '@/features/order-status';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, DiagnosticCard, ErrorState, IconSymbol, ScreenHeader, Text } from '@/shared/ui';
 
@@ -36,7 +37,10 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const insets = useSafeAreaInsets();
   // Реальная высота фиксированного CTA-бара — для точного нижнего отступа скролла (New и InProgress разной высоты).
   const [ctaHeight, setCtaHeight] = useState(0);
-  const order = MOCK_SERVICE_ORDERS.find((item) => item.id === orderId);
+  // Заявка из стора по id (один объект — без useShallow). Смена статуса меняет ссылку → реактивный ре-рендер.
+  const order = useOrdersStore((state) => state.orders.find((item) => item.id === orderId));
+  // Хук actions вызывается безусловно (до early return) — правила хуков; orderId всегда есть.
+  const { startWork, completeWork, cancelOrder } = useOrderStatusActions(orderId);
 
   const handleBack = () => router.back();
 
@@ -57,11 +61,8 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const handleAddPhoto = () => {
     router.push({ pathname: '/camera/[orderId]', params: { orderId: order.id } });
   };
-  // Открытие маршрута — Phase 6; смена статуса (начать/завершить/отменить) — Phase 4. Пока no-op.
+  // Открытие маршрута — Phase 6 (геолокация). Пока no-op.
   const handleOpenRoute = () => undefined;
-  const handleStart = () => undefined;
-  const handleComplete = () => undefined;
-  const handleCancel = () => undefined;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -188,7 +189,7 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
               variant="primary"
               size="lg"
               fullWidth
-              onPress={handleStart}
+              onPress={startWork}
             />
           ) : (
             <>
@@ -197,14 +198,10 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
                 variant="primary"
                 size="lg"
                 fullWidth
-                onPress={handleComplete}
+                onPress={completeWork}
                 leftIcon={<IconSymbol name="checkmark" size={18} color={colors.white} />}
               />
-              <Pressable
-                onPress={handleCancel}
-                accessibilityRole="button"
-                style={styles.cancelLink}
-              >
+              <Pressable onPress={cancelOrder} accessibilityRole="button" style={styles.cancelLink}>
                 <Text size="md" weight="semibold" color="danger">
                   Отменить заявку
                 </Text>

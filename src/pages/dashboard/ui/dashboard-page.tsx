@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { type FC } from 'react';
+import { type FC, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { DashboardHeader } from './dashboard-header';
@@ -7,17 +7,21 @@ import { NearestOrderCard } from './nearest-order-card';
 import { QuickActionButton } from './quick-action-button';
 import { StatsStrip } from './stats-strip';
 
-import { Screen, Text } from '@/shared/ui';
+import { getNearestOrder, useOrdersStore } from '@/entities/order';
 import { Spacing } from '@/shared/config';
-import { MOCK_SERVICE_ORDERS } from '@/entities/order';
+import { Screen, Text } from '@/shared/ui';
 
 // Экран «Главная»: шапка, статистика дня, hero ближайшей заявки и быстрые действия.
 export const DashboardPage: FC = () => {
   const router = useRouter();
-  // Ближайшая заявка в Phase 2 — первая в моке (getNearestOrder появится в Phase 3).
-  const nearestOrder = MOCK_SERVICE_ORDERS[0];
+  const orders = useOrdersStore((state) => state.orders);
+  // Производное (решение 4 плана): ближайшая активная заявка считается чистой функцией из стора.
+  const nearestOrder = useMemo(() => getNearestOrder(orders), [orders]);
 
   const handleOpenNearest = () => {
+    if (!nearestOrder) {
+      return;
+    }
     router.push({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
   };
   // Открытие маршрута — Phase 6 (геолокация). Пока no-op.
@@ -28,16 +32,18 @@ export const DashboardPage: FC = () => {
       <View style={styles.content}>
         <DashboardHeader />
         <StatsStrip />
-        <View style={styles.section}>
-          <Text size="13" color="textSecondary" style={styles.eyebrow}>
-            Следующая заявка · через 1ч 30м
-          </Text>
-          <NearestOrderCard
-            order={nearestOrder}
-            onOpen={handleOpenNearest}
-            onRoute={handleOpenRoute}
-          />
-        </View>
+        {nearestOrder ? (
+          <View style={styles.section}>
+            <Text size="13" color="textSecondary" style={styles.eyebrow}>
+              Следующая заявка · через 1ч 30м
+            </Text>
+            <NearestOrderCard
+              order={nearestOrder}
+              onOpen={handleOpenNearest}
+              onRoute={handleOpenRoute}
+            />
+          </View>
+        ) : null}
         <View style={styles.section}>
           <Text size="lg" weight="semibold">
             Быстрые действия

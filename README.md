@@ -35,6 +35,14 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [PDR](docs/PDR.md) | Полная спецификация проекта (источник истины) |
+| [Планы по фазам](docs/plans/README.md) | Пошаговые планы реализации (Phase 1–9) |
+| [Orders Logic (Phase 3)](docs/orders-logic.md) | Стор заявок, поиск, фильтры, переходы статусов |
+
 ## Learn more
 
 To learn more about developing your project with Expo, look at the following resources:
