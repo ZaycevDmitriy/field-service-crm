@@ -99,6 +99,10 @@ module.exports = defineConfig([
       'react/require-default-props': 'off',
       'react/no-unused-prop-types': 'off',
 
+      // Enum-стиль проекта (const-object + одноимённый производный тип, PDR §6) — это не
+      // переобъявление: значение и тип живут в разных пространствах имён. Отключаем ложное срабатывание.
+      '@typescript-eslint/no-redeclare': 'off',
+
       'react/react-in-jsx-scope': 'off',
       'react/jsx-filename-extension': ['error', { extensions: ['.ts', '.tsx'] }],
 
