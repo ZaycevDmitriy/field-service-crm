@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { FC, ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../text';
@@ -18,7 +18,7 @@ interface IBadgeColors {
 }
 
 // Текстовый бейдж: solid-фон по варианту, нейтральный для neutral (PDR §9.2; всегда с текстом).
-export function Badge({ variant = 'neutral', children }: IBadgeProps) {
+export const Badge: FC<IBadgeProps> = ({ variant = 'neutral', children }) => {
   const colors = useColors();
 
   const variantColors: Record<IBadgeVariant, IBadgeColors> = {
@@ -37,7 +37,7 @@ export function Badge({ variant = 'neutral', children }: IBadgeProps) {
       </Text>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   badge: {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FC } from 'react';
 import { StyleSheet, TextInput, type TextInputProps } from 'react-native';
 
 import { FontSize, Radius, Spacing, useColors } from '@/shared/config';
@@ -6,7 +6,7 @@ import { FontSize, Radius, Spacing, useColors } from '@/shared/config';
 export type IInputProps = TextInputProps;
 
 // Текстовое поле с focus-состоянием: рамка border → primary при фокусе.
-export function Input({ style, onFocus, onBlur, ...rest }: IInputProps) {
+export const Input: FC<IInputProps> = ({ style, onFocus, onBlur, ...rest }) => {
   const colors = useColors();
   const [focused, setFocused] = useState(false);
 
@@ -33,7 +33,7 @@ export function Input({ style, onFocus, onBlur, ...rest }: IInputProps) {
       }}
     />
   );
-}
+};
 
 const styles = StyleSheet.create({
   input: {
