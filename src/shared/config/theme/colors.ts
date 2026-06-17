@@ -10,7 +10,9 @@ export interface IColors {
   primaryPressed: string;
   success: string;
   warning: string;
+  warningSurface: string;
   danger: string;
+  dangerSurface: string;
   info: string;
   black: string;
   white: string;
@@ -28,8 +30,10 @@ export const lightColors = {
   primary: '#2563EB',
   primaryPressed: '#1D4ED8',
   success: '#16A34A',
-  warning: '#F59E0B',
+  warning: '#B45309',
+  warningSurface: '#FFFBEB',
   danger: '#DC2626',
+  dangerSurface: '#FEF2F2',
   info: '#0EA5E9',
   black: '#000000',
   white: '#FFFFFF',
@@ -48,7 +52,9 @@ export const darkColors = {
   primaryPressed: '#4A7BE0',
   success: '#34D399',
   warning: '#FBBF24',
+  warningSurface: 'rgba(251,191,36,0.18)',
   danger: '#F87171',
+  dangerSurface: 'rgba(248,113,113,0.18)',
   info: '#60A5FA',
   black: '#000000',
   white: '#FFFFFF',

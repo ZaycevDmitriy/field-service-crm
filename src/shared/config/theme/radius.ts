@@ -1,2 +1,3 @@
 // Радиусы скругления; общие для обеих тем (PDR §8.5).
-export const Radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 } as const;
+// Числовые ключи 10/18 — промежуточные шаги из макета fm-bundle (Phase 2): кнопка-назад radius 10, hero-карточка radius 18.
+export const Radius = { sm: 8, '10': 10, md: 12, lg: 16, '18': 18, xl: 24, pill: 999 } as const;

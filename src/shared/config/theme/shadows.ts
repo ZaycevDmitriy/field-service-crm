@@ -9,4 +9,10 @@ export const Shadows = {
       { offsetX: 0, offsetY: 2, blurRadius: 8, spreadDistance: 0, color: 'rgba(0,0,0,0.08)' },
     ],
   },
-} satisfies Record<'card', ViewStyle>;
+  // Усиленная тень для hero-карточки (тяжелее карточной): больше смещение, размытие и насыщенность.
+  hero: {
+    boxShadow: [
+      { offsetX: 0, offsetY: 8, blurRadius: 24, spreadDistance: 0, color: 'rgba(0,0,0,0.12)' },
+    ],
+  },
+} satisfies Record<'card' | 'hero', ViewStyle>;
