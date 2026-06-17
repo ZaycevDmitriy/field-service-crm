@@ -1,4 +1,4 @@
-// Публичный API слайса order. UI-сегмент (OrderCard, OrderStatusBadge, …) добавляется в #5.
+// Публичный API слайса order.
 export type { IServiceOrder, IServiceOrderPhoto } from './model';
 export {
   ServiceOrderStatusEnum,
@@ -7,3 +7,14 @@ export {
   OrderFilterLabel,
   MOCK_SERVICE_ORDERS,
 } from './model';
+export {
+  OrderStatusBadge,
+  OrderCard,
+  PhotoThumbnail,
+  OrderPhotoList,
+  type IOrderStatusBadgeProps,
+  type IOrderStatusBadgeSize,
+  type IOrderCardProps,
+  type IPhotoThumbnailProps,
+  type IOrderPhotoListProps,
+} from './ui';

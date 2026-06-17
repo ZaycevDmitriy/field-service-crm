@@ -6,10 +6,12 @@ import { Text } from '../text';
 import { Radius, Spacing, useColors, type IColors } from '@/shared/config';
 
 export type IButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+export type IButtonSize = 'md' | 'lg';
 
 export interface IButtonProps {
   title: string;
   variant?: IButtonVariant;
+  size?: IButtonSize;
   disabled?: boolean;
   loading?: boolean;
   fullWidth?: boolean;
@@ -27,6 +29,7 @@ interface IVariantColors {
 export function Button({
   title,
   variant = 'primary',
+  size = 'md',
   disabled = false,
   loading = false,
   fullWidth = false,
@@ -65,6 +68,7 @@ export function Button({
         const variantColors = resolveColors(pressed);
         return [
           styles.button,
+          size === 'lg' && styles.buttonLg,
           {
             backgroundColor: variantColors.background,
             borderColor: variantColors.border,
@@ -79,7 +83,7 @@ export function Button({
       ) : (
         <>
           {leftIcon}
-          <Text weight="semibold" color={textColorKey}>
+          <Text weight="semibold" size={size === 'lg' ? '17' : 'md'} color={textColorKey}>
             {title}
           </Text>
         </>
@@ -98,6 +102,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.md,
+  },
+  buttonLg: {
+    minHeight: 56,
   },
   fullWidth: {
     alignSelf: 'stretch',
