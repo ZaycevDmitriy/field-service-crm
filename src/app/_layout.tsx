@@ -18,6 +18,11 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="orders/[orderId]" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="camera/[orderId]"
+            options={{ headerShown: false, presentation: 'fullScreenModal' }}
+          />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>
