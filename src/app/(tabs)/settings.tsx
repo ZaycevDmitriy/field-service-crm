@@ -1,6 +1,8 @@
+import type { FC } from 'react';
+
 import { SettingsPage } from '@/pages/settings';
 
 // Тонкий route Expo Router: рендерит страницу из слоя pages.
-export default function SettingsRoute() {
-  return <SettingsPage />;
-}
+const SettingsRoute: FC = () => <SettingsPage />;
+
+export default SettingsRoute;

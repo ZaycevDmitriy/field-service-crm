@@ -1,3 +1,4 @@
+import type { FC } from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
 
 import { Radius, Shadows, Spacing, useColors } from '@/shared/config';
@@ -5,7 +6,7 @@ import { Radius, Shadows, Spacing, useColors } from '@/shared/config';
 export type ICardProps = ViewProps;
 
 // Базовая поверхность: surface-фон, рамка, скругление и мягкая тень (PDR §9.4).
-export function Card({ style, children, ...rest }: ICardProps) {
+export const Card: FC<ICardProps> = ({ style, children, ...rest }) => {
   const colors = useColors();
 
   return (
@@ -16,7 +17,7 @@ export function Card({ style, children, ...rest }: ICardProps) {
       {children}
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   card: {

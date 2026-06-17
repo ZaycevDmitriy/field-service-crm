@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { FC, ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 
 import { Text } from '../text';
@@ -26,7 +26,7 @@ interface IVariantColors {
 }
 
 // Кнопка с вариантами primary/secondary/danger/ghost (PDR §9.1).
-export function Button({
+export const Button: FC<IButtonProps> = ({
   title,
   variant = 'primary',
   size = 'md',
@@ -35,7 +35,7 @@ export function Button({
   fullWidth = false,
   leftIcon,
   onPress,
-}: IButtonProps) {
+}) => {
   const colors = useColors();
   const isDisabled = disabled || loading;
 
@@ -90,7 +90,7 @@ export function Button({
       )}
     </Pressable>
   );
-}
+};
 
 const styles = StyleSheet.create({
   button: {

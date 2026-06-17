@@ -2,7 +2,7 @@
 
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
-import { ComponentProps } from 'react';
+import { ComponentProps, type FC } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
 // В expo-symbols 56 name стал SFSymbol | { ios?; android?; web? } — берём строковую часть для ключа.
@@ -50,17 +50,12 @@ const MAPPING = {
  * Обеспечивает единообразный вид на платформах и оптимальный расход ресурсов.
  * Имена `name` основаны на SF Symbols и требуют ручного маппинга на Material Icons.
  */
-export function IconSymbol({
-  name,
-  size = 24,
-  color,
-  style,
-}: {
+export const IconSymbol: FC<{
   name: IconSymbolName;
   size?: number;
   color: string | OpaqueColorValue;
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
-}) {
+}> = ({ name, size = 24, color, style }) => {
   return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
-}
+};
