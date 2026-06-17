@@ -1,4 +1,4 @@
-import type { FC, ReactNode } from 'react';
+import { useMemo, type FC, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../text';
@@ -21,13 +21,17 @@ interface IBadgeColors {
 export const Badge: FC<IBadgeProps> = ({ variant = 'neutral', children }) => {
   const colors = useColors();
 
-  const variantColors: Record<IBadgeVariant, IBadgeColors> = {
-    info: { background: colors.info, text: 'white' },
-    success: { background: colors.success, text: 'white' },
-    warning: { background: colors.warning, text: 'white' },
-    danger: { background: colors.danger, text: 'white' },
-    neutral: { background: colors.surfaceMuted, text: 'textSecondary' },
-  };
+  // Карта цветов по варианту; пересоздаётся только при смене темы (ссылка colors стабильна).
+  const variantColors = useMemo<Record<IBadgeVariant, IBadgeColors>>(
+    () => ({
+      info: { background: colors.info, text: 'white' },
+      success: { background: colors.success, text: 'white' },
+      warning: { background: colors.warning, text: 'white' },
+      danger: { background: colors.danger, text: 'white' },
+      neutral: { background: colors.surfaceMuted, text: 'textSecondary' },
+    }),
+    [colors],
+  );
   const { background, text } = variantColors[variant];
 
   return (
