@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { FC, ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,7 +11,7 @@ export interface IScreenProps {
 }
 
 // Контейнер экрана: safe area, фон по теме, опциональные скролл и горизонтальный отступ (PDR §9.5).
-export function Screen({ children, scrollable = false, withPadding = true }: IScreenProps) {
+export const Screen: FC<IScreenProps> = ({ children, scrollable = false, withPadding = true }) => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
@@ -38,7 +38,7 @@ export function Screen({ children, scrollable = false, withPadding = true }: ISc
       {children}
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   flex: {

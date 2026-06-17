@@ -1,3 +1,4 @@
+import type { FC } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { Text } from '../text';
@@ -11,7 +12,7 @@ export interface IChipProps {
 }
 
 // Фильтр-чип: выбранное состояние визуально доминирует (PDR §9.3).
-export function Chip({ label, selected = false, onPress }: IChipProps) {
+export const Chip: FC<IChipProps> = ({ label, selected = false, onPress }) => {
   const colors = useColors();
 
   return (
@@ -30,7 +31,7 @@ export function Chip({ label, selected = false, onPress }: IChipProps) {
       </Text>
     </Pressable>
   );
-}
+};
 
 const styles = StyleSheet.create({
   chip: {

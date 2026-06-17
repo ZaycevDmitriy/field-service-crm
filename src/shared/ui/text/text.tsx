@@ -1,3 +1,4 @@
+import type { FC } from 'react';
 import { Text as RNText, type TextProps } from 'react-native';
 
 import { FontSize, FontWeight, useColors, type IColors } from '@/shared/config';
@@ -9,14 +10,14 @@ export interface ITextProps extends TextProps {
 }
 
 // Базовый текстовый примитив на токенах typography; цвет — ключ палитры, резолвится по системной теме.
-export function Text({
+export const Text: FC<ITextProps> = ({
   size = 'md',
   weight = 'regular',
   color = 'textPrimary',
   style,
   children,
   ...rest
-}: ITextProps) {
+}) => {
   const colors = useColors();
 
   return (
@@ -30,4 +31,4 @@ export function Text({
       {children}
     </RNText>
   );
-}
+};
