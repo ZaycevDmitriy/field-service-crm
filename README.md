@@ -42,6 +42,7 @@ This command will move the starter code to the **app-example** directory and cre
 | [PDR](docs/PDR.md) | Полная спецификация проекта (источник истины) |
 | [Планы по фазам](docs/plans/README.md) | Пошаговые планы реализации (Phase 1–9) |
 | [Orders Logic (Phase 3)](docs/orders-logic.md) | Стор заявок, поиск, фильтры, переходы статусов |
+| [SQLite Persistence (Phase 4)](docs/sqlite-persistence.md) | Локальное хранилище заявок и фото в SQLite |
 
 ## Learn more
 
