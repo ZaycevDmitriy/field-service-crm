@@ -48,6 +48,7 @@
         "expo-camera",
         {
           "cameraPermission": "FieldMate использует камеру для фотоотчёта по заявке.",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],
