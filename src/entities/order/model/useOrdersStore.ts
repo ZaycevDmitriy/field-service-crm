@@ -42,7 +42,8 @@ const transitionStatus = (
 
 // Fire-and-forget персист статуса: не блокирует оптимистичный UI, ошибку только логирует.
 const persistStatus = (orderId: string, status: ServiceOrderStatusEnum, action: string): void => {
-  void orderDatabaseService.updateOrderStatus(orderId, status).catch((error) => {
+  // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
+  orderDatabaseService.updateOrderStatus(orderId, status).catch((error) => {
     console.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
   });
 };
