@@ -15,10 +15,10 @@ export const unstable_settings = {
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
 
-  // Однократная гидрация стора при старте (не-реактивный getState). Задел под initDatabase (Phase 4).
-  // loadOrders идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
+  // Однократный bootstrap БД при старте (не-реактивный getState): инициализация SQLite, идемпотентный
+  // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
   useEffect(() => {
-    useOrdersStore.getState().loadOrders();
+    useOrdersStore.getState().initialize();
   }, []);
 
   return (
