@@ -5,7 +5,9 @@ import { orderDatabaseService } from '../api';
 import { OrderFilterEnum } from './order-filter';
 import { ServiceOrderStatusEnum } from './order-status';
 import { makeStressOrders, STRESS_TEST, STRESS_TEST_COUNT } from './stress';
-import type { IServiceOrder } from './types';
+import type { IServiceOrder, IServiceOrderPhoto } from './types';
+
+import { createId } from '@/shared/lib/id';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
 // счётчики, ближайшая заявка) считается чистыми функциями в компонентах, а не здесь.
@@ -26,6 +28,9 @@ export interface IOrdersStore {
   startWork: (orderId: string) => void;
   completeWork: (orderId: string) => void;
   cancelOrder: (orderId: string) => void;
+  // Добавляет фото к заявке. Доменную сборку (id/createdAt) делает стор; вход — абсолютный URI снимка
+  // и опциональный комментарий. Оптимистичный апдейт + fire-and-forget персист (как переходы статуса).
+  addOrderPhoto: (orderId: string, photo: { uri: string; comment?: string }) => void;
   // Очистка локальной БД (Settings): обе таблицы пусты, список → EmptyState. Повторный сид — следующий старт.
   clearDatabase: () => Promise<void>;
 }
@@ -151,6 +156,30 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       ),
     });
     persistStatus(orderId, ServiceOrderStatusEnum.Cancelled, 'cancelOrder');
+  },
+
+  addOrderPhoto: (orderId, { uri, comment }) => {
+    const order = get().orders.find((item) => item.id === orderId);
+    if (!order) {
+      return;
+    }
+    // Комментарий кладём только если он непустой (домен: отсутствие ключа вместо пустой строки).
+    const trimmedComment = comment?.trim();
+    const photo: IServiceOrderPhoto = {
+      id: createId(),
+      uri,
+      ...(trimmedComment ? { comment: trimmedComment } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    set({
+      orders: get().orders.map((item) =>
+        item.id === orderId ? { ...item, photos: [...item.photos, photo] } : item,
+      ),
+    });
+    // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
+    orderDatabaseService.addOrderPhoto(orderId, photo).catch((error) => {
+      console.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
+    });
   },
 
   clearDatabase: async () => {
