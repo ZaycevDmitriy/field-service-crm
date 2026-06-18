@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { type FC, memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { IServiceOrder } from '../../model';
@@ -9,18 +9,20 @@ import { IconSymbol, Text } from '@/shared/ui';
 
 export interface IOrderCardProps {
   order: IServiceOrder;
-  onPress: () => void;
+  // Колбэк принимает id и вызывается внутри элемента — родитель передаёт один стабильный useCallback
+  // на весь список (без `() => fn(order.id)` на каждый элемент), иначе memo холостой (свод §4.3).
+  onPress: (orderId: string) => void;
 }
 
 // Карточка заявки в списке: левый рейл цвета статуса, время+дистанция и StatusBadge, заголовок, адрес+клиент.
-export const OrderCard: FC<IOrderCardProps> = ({ order, onPress }) => {
+const OrderCardComponent: FC<IOrderCardProps> = ({ order, onPress }) => {
   const colors = useColors();
   const statusColors = useOrderStatusColors();
   const railColor = statusColors[order.status].text;
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => onPress(order.id)}
       accessibilityRole="button"
       style={({ pressed }) => [
         styles.card,
@@ -58,6 +60,10 @@ export const OrderCard: FC<IOrderCardProps> = ({ order, onPress }) => {
     </Pressable>
   );
 };
+
+// Мемоизация элемента списка обязательна (свод §4.1): перерисовывается только при смене своих
+// данных (`order` по ссылке из иммутабельного стора) или темы; ререндер родителя его не трогает.
+export const OrderCard = memo(OrderCardComponent);
 
 const styles = StyleSheet.create({
   card: {
