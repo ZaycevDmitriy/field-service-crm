@@ -4,6 +4,7 @@ import { orderDatabaseService } from '../api';
 
 import { OrderFilterEnum } from './order-filter';
 import { ServiceOrderStatusEnum } from './order-status';
+import { makeStressOrders, STRESS_TEST, STRESS_TEST_COUNT } from './stress';
 import type { IServiceOrder } from './types';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
@@ -59,6 +60,14 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     // Guard от повторного входа (StrictMode-дубль в dev). Не зовём loadOrders, чтобы не упереться
     // в его собственный guard — гидрируем напрямую под общим окном loading.
     if (get().loading) {
+      return;
+    }
+    // Dev-only стресс-тест виртуализации: наполняем стор синтетикой мимо БД (см. model/stress.ts).
+    if (STRESS_TEST) {
+      console.warn(
+        `[useOrdersStore.initialize] STRESS_TEST: ${STRESS_TEST_COUNT} синтетических заявок.`,
+      );
+      set({ orders: makeStressOrders(STRESS_TEST_COUNT), loading: false, error: null });
       return;
     }
     set({ loading: true });
