@@ -41,7 +41,8 @@
       "expo-image",
       "expo-status-bar",
       "expo-web-browser",
-      "@react-native-vector-icons/material-icons"
+      "@react-native-vector-icons/material-icons",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
