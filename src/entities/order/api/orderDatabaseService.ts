@@ -1,3 +1,4 @@
+import { File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { MOCK_SERVICE_ORDERS } from '../model/mock';
@@ -59,10 +60,27 @@ const SCHEMA_SQL = `
   );
 `;
 
+// URI фото: в БД храним ОТНОСИТЕЛЬНЫЙ путь (photos/<file>), а рантайм/стор работают с АБСОЛЮТНЫМ.
+// На iOS абсолютный путь Paths.document (UUID контейнера) меняется при новом билде/переустановке
+// (expo/expo#32788), поэтому абсолютный URI ломается, а относительный — переживает. Реконструкция
+// локализована здесь, в api-слое. Фото камеры/галереи копируются в Paths.document/photos
+// (см. photoService.persistPhoto); внешние и mock-схемы (mock://, http(s)://) не конвертируются.
+
+// Абсолютный file://-URI под document-каталогом → относительный путь; прочие схемы — как есть.
+const toStoredUri = (uri: string): string => {
+  const documentUri = Paths.document.uri;
+
+  return uri.startsWith(documentUri) ? uri.slice(documentUri.length).replace(/^\/+/, '') : uri;
+};
+
+// Относительный путь без URI-схемы → абсолютный URI под текущим document-каталогом; URI со схемой — как есть.
+const toRuntimeUri = (stored: string): string =>
+  stored.includes('://') ? stored : new File(Paths.document, stored).uri;
+
 // Мапперы (чистые, типизированные): snake_case строка БД ↔ camelCase домен.
 const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   id: row.id,
-  uri: row.uri,
+  uri: toRuntimeUri(row.uri),
   // `comment` опционален в домене: NULL из БД → отсутствие ключа.
   ...(row.comment !== null ? { comment: row.comment } : {}),
   createdAt: row.created_at,
@@ -97,7 +115,7 @@ const orderToRow = (order: IServiceOrder): IServiceOrderRow => ({
 const photoToRow = (orderId: string, photo: IServiceOrderPhoto): IServiceOrderPhotoRow => ({
   id: photo.id,
   order_id: orderId,
-  uri: photo.uri,
+  uri: toStoredUri(photo.uri),
   comment: photo.comment ?? null,
   created_at: photo.createdAt,
 });
