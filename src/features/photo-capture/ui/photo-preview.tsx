@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { type FC, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -5,20 +6,27 @@ import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, Input, Text } from '@/shared/ui';
 
 export interface IPhotoPreviewProps {
-  onSave: () => void;
+  // Абсолютный URI снятого/выбранного фото для предпросмотра.
+  uri: string;
+  // Передаёт комментарий наружу при сохранении (комментарий хранится в local state экрана).
+  onSave: (comment: string) => void;
   onRetake: () => void;
 }
 
-// Предпросмотр снимка (заглушка Phase 2): плейсхолдер-превью растягивается на доступную высоту,
+// Предпросмотр снимка: реальное фото растягивается на доступную высоту (contentFit cover),
 // поле комментария и действия «Сохранить»/«Переснять» закреплены снизу (без прокрутки).
 // Комментарий — временное состояние экрана, хранится в local state (PDR §13).
-export const PhotoPreview: FC<IPhotoPreviewProps> = ({ onSave, onRetake }) => {
+export const PhotoPreview: FC<IPhotoPreviewProps> = ({ uri, onSave, onRetake }) => {
   const colors = useColors();
   const [comment, setComment] = useState('');
 
   return (
     <View style={styles.container}>
-      <View style={[styles.preview, { backgroundColor: colors.surfaceMuted }]} />
+      <Image
+        source={{ uri }}
+        contentFit="cover"
+        style={[styles.preview, { backgroundColor: colors.surfaceMuted }]}
+      />
       <View style={styles.commentBlock}>
         <Text size="13" weight="semibold" color="textSecondary" style={styles.label}>
           Комментарий
@@ -32,7 +40,13 @@ export const PhotoPreview: FC<IPhotoPreviewProps> = ({ onSave, onRetake }) => {
         />
       </View>
       <View style={styles.actions}>
-        <Button title="Сохранить фото" variant="primary" size="lg" fullWidth onPress={onSave} />
+        <Button
+          title="Сохранить фото"
+          variant="primary"
+          size="lg"
+          fullWidth
+          onPress={() => onSave(comment)}
+        />
         <Button title="Переснять" variant="secondary" fullWidth onPress={onRetake} />
       </View>
     </View>
