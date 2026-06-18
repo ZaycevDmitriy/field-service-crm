@@ -8,7 +8,8 @@
     "scheme": "fieldservicecrm",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.field-service-crm"
     },
     "android": {
       "adaptiveIcon": {
