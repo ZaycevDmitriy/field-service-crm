@@ -1,6 +1,7 @@
 import { type FC } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
+import { useOrdersStore } from '@/entities/order';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import {
   Badge,
@@ -15,8 +16,29 @@ import {
 // Экран «Настройки»: статическая диагностика доставки (EAS) и данные. Значения статичны, кнопки no-op (Phase 8).
 export const SettingsPage: FC = () => {
   const colors = useColors();
-  // Действия — Phase 8 (реальные updates/очистка БД). Пока no-op.
+  // Селективная выборка: ререндер только при изменении счётчика/референса экшена.
+  const ordersCount = useOrdersStore((state) => state.orders.length);
+  const clearDatabase = useOrdersStore((state) => state.clearDatabase);
+  // Updates/перезагрузка — Phase 8. Пока no-op.
   const noop = () => undefined;
+
+  // Подтверждение деструктивной очистки → экшен стора (ошибку логирует стор/сервис).
+  const handleClearDatabase = () => {
+    Alert.alert(
+      'Очистить локальную БД?',
+      'Все заявки и фото будут удалены с устройства. Демо-данные восстановятся при следующем запуске.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Очистить',
+          style: 'destructive',
+          onPress: () => {
+            clearDatabase();
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <Screen scrollable>
@@ -91,7 +113,7 @@ export const SettingsPage: FC = () => {
                   Локальная база
                 </Text>
                 <Text size="13" color="textSecondary">
-                  12.4 МБ · 87 заявок в кэше
+                  Заявок в кэше: {ordersCount}
                 </Text>
               </View>
             </View>
@@ -99,7 +121,7 @@ export const SettingsPage: FC = () => {
               title="Очистить локальную БД"
               variant="danger"
               fullWidth
-              onPress={noop}
+              onPress={handleClearDatabase}
               leftIcon={<IconSymbol name="trash.fill" size={18} color={colors.white} />}
             />
           </View>
