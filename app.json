@@ -43,7 +43,20 @@
       "expo-status-bar",
       "expo-web-browser",
       "@react-native-vector-icons/material-icons",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FieldMate использует камеру для фотоотчёта по заявке.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FieldMate использует галерею для добавления фото к заявке."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
