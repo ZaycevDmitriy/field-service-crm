@@ -1,7 +1,6 @@
-import { type FC } from 'react';
+import { memo, type FC } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { useOrdersStore } from '@/entities/order';
 import { OrderStatusFilter } from '@/features/order-filter';
 import { OrderSearch } from '@/features/order-search';
 import { Spacing } from '@/shared/config';
@@ -9,13 +8,10 @@ import { useAppStore } from '@/shared/model';
 import { OfflineBanner, Text } from '@/shared/ui';
 
 // Закреплённая шапка экрана «Заявки»: заголовок, поиск и фильтр статусов. Рендерится отдельным
-// элементом над FlashList (вне прокрутки списка), поэтому не уезжает при скролле карточек. Как
-// позиционный дочерний элемент OrdersPage не перемонтируется при ререндере — TextInput поиска
-// не теряет фокус (свод §4.9).
-export const OrdersListHeader: FC = () => {
-  const search = useOrdersStore((state) => state.search);
-  const setSearch = useOrdersStore((state) => state.setSearch);
-
+// элементом над FlashList (вне прокрутки списка), поэтому не уезжает при скролле карточек. Поиск
+// и фильтр самоподписаны на стор; шапка зависит только от offline и обёрнута в memo — ввод в
+// поиске её не ререндерит, перерисовывается только сам инпут (свод §4.1/§4.9).
+const OrdersListHeaderView: FC = () => {
   const offline = useAppStore((state) => state.offline);
 
   return (
@@ -23,12 +19,14 @@ export const OrdersListHeader: FC = () => {
       <Text size="xl" weight="bold">
         Заявки
       </Text>
-      <OrderSearch value={search} onChangeText={setSearch} />
+      <OrderSearch />
       <OrderStatusFilter />
       {offline ? <OfflineBanner /> : null}
     </View>
   );
 };
+
+export const OrdersListHeader = memo(OrdersListHeaderView);
 
 const styles = StyleSheet.create({
   header: {
