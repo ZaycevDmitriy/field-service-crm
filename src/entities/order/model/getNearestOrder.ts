@@ -24,10 +24,10 @@ const toMinutes = (time: string): number => {
  * заявки. Без локации (отказ/ещё не получена) — fallback на самую раннюю по времени визита
  * (`scheduledTime`), как в Phase 3.
  */
-export const getNearestOrder = (
+export function getNearestOrder(
   orders: IServiceOrder[],
   userCoords?: IGeoPoint | null,
-): IServiceOrder | undefined => {
+): IServiceOrder | undefined {
   const active = orders.filter(
     (order) =>
       order.status === ServiceOrderStatusEnum.New ||
@@ -49,4 +49,4 @@ export const getNearestOrder = (
   return active.reduce((nearest, order) =>
     toMinutes(order.scheduledTime) < toMinutes(nearest.scheduledTime) ? order : nearest,
   );
-};
+}
