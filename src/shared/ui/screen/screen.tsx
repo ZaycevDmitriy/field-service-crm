@@ -15,26 +15,33 @@ export const Screen: FC<IScreenProps> = ({ children, scrollable = false, withPad
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  // Нижний отступ — не меньше базового, даже при нулевом insets.bottom.
-  const contentInsets = {
-    paddingTop: insets.top,
-    paddingBottom: Math.max(insets.bottom, Spacing.md),
-    paddingHorizontal: withPadding ? Spacing.md : 0,
-  };
+  const paddingHorizontal = withPadding ? Spacing.md : 0;
 
   if (scrollable) {
     return (
       <ScrollView
         style={[styles.flex, { backgroundColor: colors.background }]}
-        contentContainerStyle={contentInsets}
+        contentContainerStyle={{
+          paddingTop: insets.top,
+          paddingBottom: Math.max(insets.bottom, Spacing.md),
+          paddingHorizontal,
+        }}
       >
         {children}
       </ScrollView>
     );
   }
 
+  // Нескролящийся контейнер оборачивает самоскролящийся список (FlashList «Заявок»): он сам
+  // занимает высоту до нижнего края и управляет своим нижним отступом контента. Нижний safe-area
+  // инсет здесь не добавляем — иначе под списком висит пустая полоса до таб-бара.
   return (
-    <View style={[styles.flex, { backgroundColor: colors.background }, contentInsets]}>
+    <View
+      style={[
+        styles.flex,
+        { backgroundColor: colors.background, paddingTop: insets.top, paddingHorizontal },
+      ]}
+    >
       {children}
     </View>
   );
