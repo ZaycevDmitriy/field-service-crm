@@ -1,7 +1,7 @@
 import { type FC } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { OrderStatusBadge, type IServiceOrder } from '@/entities/order';
+import { OrderStatusBadge, useOrderDistanceLabel, type IServiceOrder } from '@/entities/order';
 import { Radius, Shadows, Spacing, useColors } from '@/shared/config';
 import { Button, IconSymbol, Text } from '@/shared/ui';
 
@@ -14,6 +14,8 @@ export interface INearestOrderCardProps {
 // Hero «Следующая заявка»: radius 18, левый рейл 4px primary, усиленная тень, split-CTA (открыть/маршрут).
 export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, onRoute }) => {
   const colors = useColors();
+  // Дистанция — производное от текущей локации; null → сегмент скрыт (локация недоступна).
+  const distanceLabel = useOrderDistanceLabel(order);
 
   return (
     <View style={[styles.hero, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -25,9 +27,11 @@ export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, on
             <Text size="22" weight="bold" style={styles.tabular}>
               {order.scheduledTime}
             </Text>
-            <Text size="13" color="textSecondary" style={styles.tabular}>
-              {` · ${order.distanceLabel}`}
-            </Text>
+            {distanceLabel ? (
+              <Text size="13" color="textSecondary" style={styles.tabular}>
+                {` · ${distanceLabel}`}
+              </Text>
+            ) : null}
           </View>
           <OrderStatusBadge status={order.status} size="md" />
         </View>

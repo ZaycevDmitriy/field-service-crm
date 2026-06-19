@@ -72,7 +72,7 @@ export const SettingsPage: FC = () => {
           <DiagnosticRow label="Runtime version" value="1.0.0" isLast />
         </DiagnosticCard>
 
-        <DiagnosticCard title="Updates">
+        <DiagnosticCard title="Обновление">
           <View style={styles.block}>
             <View style={styles.row}>
               <View style={styles.rowText}>

@@ -1,6 +1,8 @@
 import { ServiceOrderStatusEnum } from './order-status';
 import type { IServiceOrder } from './types';
 
+import { getDistanceInKm, type IGeoPoint } from '@/shared/lib/geo';
+
 // Парсит время вида 'HH:mm' в минуты от полуночи. Некорректный ввод → большое число (уходит в конец сортировки).
 const toMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':');
@@ -15,13 +17,17 @@ const toMinutes = (time: string): number => {
 };
 
 /**
- * Возвращает ближайшую активную заявку (статус New или InProgress) — с минимальным `scheduledTime`.
- * Если активных заявок нет — `undefined`.
+ * Возвращает ближайшую активную заявку (статус New или InProgress). Если активных заявок нет —
+ * `undefined`.
  *
- * В Phase 3 «ближайшая» = самая ранняя по времени визита. Реальная сортировка по геодистанции
- * до текущей локации появится в Phase 6.
+ * При наличии координат работника «ближайшая» = минимальная геодистанция (Haversine) до адреса
+ * заявки. Без локации (отказ/ещё не получена) — fallback на самую раннюю по времени визита
+ * (`scheduledTime`), как в Phase 3.
  */
-export const getNearestOrder = (orders: IServiceOrder[]): IServiceOrder | undefined => {
+export function getNearestOrder(
+  orders: IServiceOrder[],
+  userCoords?: IGeoPoint | null,
+): IServiceOrder | undefined {
   const active = orders.filter(
     (order) =>
       order.status === ServiceOrderStatusEnum.New ||
@@ -32,7 +38,15 @@ export const getNearestOrder = (orders: IServiceOrder[]): IServiceOrder | undefi
     return undefined;
   }
 
+  // С локацией — ближайшая по геодистанции (координаты заявки структурно совместимы с IGeoPoint).
+  if (userCoords) {
+    return active.reduce((nearest, order) =>
+      getDistanceInKm(userCoords, order) < getDistanceInKm(userCoords, nearest) ? order : nearest,
+    );
+  }
+
+  // Без локации — самая ранняя по времени визита.
   return active.reduce((nearest, order) =>
     toMinutes(order.scheduledTime) < toMinutes(nearest.scheduledTime) ? order : nearest,
   );
-};
+}

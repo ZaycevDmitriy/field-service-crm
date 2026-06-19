@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.field-service-crm"
+      "bundleIdentifier": "com.anonymous.field-service-crm",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["yandexmaps"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -56,6 +59,14 @@
         "expo-image-picker",
         {
           "photosPermission": "FieldMate использует галерею для добавления фото к заявке."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FieldMate использует геолокацию для расчёта дистанции до заявки и построения маршрута.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ]
     ],

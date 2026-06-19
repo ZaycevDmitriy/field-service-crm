@@ -7,6 +7,7 @@ export {
   OrderFilterLabel,
   useOrdersStore,
   getNearestOrder,
+  useOrderDistanceLabel,
 } from './model';
 export {
   OrderStatusBadge,

@@ -7,8 +7,10 @@ import {
   OrderPhotoList,
   OrderStatusBadge,
   ServiceOrderStatusEnum,
+  useOrderDistanceLabel,
   useOrdersStore,
 } from '@/entities/order';
+import { OpenRouteButton } from '@/features/open-route';
 import { useOrderStatusActions } from '@/features/order-status';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, DiagnosticCard, ErrorState, IconSymbol, ScreenHeader, Text } from '@/shared/ui';
@@ -41,6 +43,8 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const order = useOrdersStore((state) => state.orders.find((item) => item.id === orderId));
   // Хук actions вызывается безусловно (до early return) — правила хуков; orderId всегда есть.
   const { startWork, completeWork, cancelOrder } = useOrderStatusActions(orderId);
+  // Дистанция — производное от текущей локации; хук терпит undefined order (вызов до early return).
+  const distanceLabel = useOrderDistanceLabel(order);
 
   const handleBack = () => router.back();
 
@@ -61,8 +65,6 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const handleAddPhoto = () => {
     router.push({ pathname: '/camera/[orderId]', params: { orderId: order.id } });
   };
-  // Открытие маршрута — Phase 6 (геолокация). Пока no-op.
-  const handleOpenRoute = () => undefined;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -91,24 +93,14 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
                 <Text size="15" weight="medium">
                   {order.address}
                 </Text>
-                <Text size="13" color="textSecondary">
-                  {order.distanceLabel} от вас
-                </Text>
+                {distanceLabel ? (
+                  <Text size="13" color="textSecondary">
+                    {distanceLabel} от вас
+                  </Text>
+                ) : null}
               </View>
             </View>
-            <Button
-              title="Открыть маршрут"
-              variant="secondary"
-              fullWidth
-              onPress={handleOpenRoute}
-              leftIcon={
-                <IconSymbol
-                  name="arrow.triangle.turn.up.right.diamond.fill"
-                  size={18}
-                  color={colors.textPrimary}
-                />
-              }
-            />
+            <OpenRouteButton order={order} />
           </View>
         </DiagnosticCard>
 

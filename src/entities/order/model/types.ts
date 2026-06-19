@@ -22,7 +22,9 @@ export interface IServiceOrder {
   scheduledTime: string;
   // Временной слот для деталей, напр. «12:00 — 13:00».
   scheduledSlot: string;
-  // Статичная подпись дистанции, напр. «4.2 км» (реальная геодистанция — Phase 6).
-  distanceLabel: string;
+  // Гео-координаты адреса заявки (Phase 6). Persistent domain-поля. Дистанция до работника —
+  // производное от текущей локации (см. useOrderDistanceLabel), в модели/БД не хранится.
+  latitude: number;
+  longitude: number;
   photos: IServiceOrderPhoto[];
 }
