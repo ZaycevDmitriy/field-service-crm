@@ -9,11 +9,19 @@ import { OrdersListHeader } from './orders-list-header';
 import { OrderCard, useOrdersStore, type IServiceOrder } from '@/entities/order';
 import { getFilteredOrders } from '@/features/order-filter';
 import { Spacing } from '@/shared/config';
-import { Screen } from '@/shared/ui';
+import { Screen, Text } from '@/shared/ui';
 
 const keyExtractor = (item: IServiceOrder): string => item.id;
 const ItemSeparator: FC = () => <View style={styles.separator} />;
 const maintainVisibleContentPosition = { disabled: true } as const;
+
+// Метка секции «Сегодня» — прокручивается вместе с карточками (в отличие от закреплённой шапки).
+// Стабильная модульная константа для ListHeaderComponent FlashList — не перемонтируется.
+const OrdersSectionLabel: FC = () => (
+  <Text size="13" color="textSecondary" style={styles.sectionLabel}>
+    Сегодня
+  </Text>
+);
 
 export const OrdersPage: FC = () => {
   const router = useRouter();
@@ -44,24 +52,34 @@ export const OrdersPage: FC = () => {
 
   return (
     <Screen scrollable={false} withPadding={false}>
+      {/* Закреплённая шапка вне списка — заголовок, поиск и фильтр не скроллятся с карточками. */}
+      <OrdersListHeader />
       <FlashList
         data={filteredOrders}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={OrdersListHeader}
+        ListHeaderComponent={OrdersSectionLabel}
         ListEmptyComponent={OrdersListEmpty}
         ItemSeparatorComponent={ItemSeparator}
         maintainVisibleContentPosition={maintainVisibleContentPosition}
         contentContainerStyle={styles.listContent}
+        style={styles.list}
       />
     </Screen>
   );
 };
 
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+  },
   listContent: {
-    // Горизонтальный отступ контента (Screen withPadding={false}); верх/низ safe-area даёт Screen.
     paddingHorizontal: Spacing.md,
+  },
+  sectionLabel: {
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: Spacing.sm,
   },
   separator: {
     height: Spacing.sm,

@@ -8,9 +8,10 @@ import { Spacing } from '@/shared/config';
 import { useAppStore } from '@/shared/model';
 import { OfflineBanner, Text } from '@/shared/ui';
 
-// Шапка списка заявок для `ListHeaderComponent` FlashList. Без пропсов и подписана на сторы
-// атомарными селекторами — модульная константа стабильна по ссылке, поэтому TextInput поиска
-// не перемонтируется на каждый символ и не теряет фокус (свод §4.9, решение F1 плана).
+// Закреплённая шапка экрана «Заявки»: заголовок, поиск и фильтр статусов. Рендерится отдельным
+// элементом над FlashList (вне прокрутки списка), поэтому не уезжает при скролле карточек. Как
+// позиционный дочерний элемент OrdersPage не перемонтируется при ререндере — TextInput поиска
+// не теряет фокус (свод §4.9).
 export const OrdersListHeader: FC = () => {
   const search = useOrdersStore((state) => state.search);
   const setSearch = useOrdersStore((state) => state.setSearch);
@@ -27,22 +28,16 @@ export const OrdersListHeader: FC = () => {
       <OrderSearch value={search} onChangeText={setSearch} />
       <OrderStatusFilter value={filter} onChange={setFilter} orders={orders} />
       {offline ? <OfflineBanner /> : null}
-      <Text size="13" color="textSecondary" style={styles.eyebrow}>
-        Сегодня
-      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   header: {
+    // Горизонтальный отступ (Screen у «Заявок» — withPadding={false}); список задаёт свой отдельно.
+    paddingHorizontal: Spacing.md,
     gap: Spacing.md,
-    // Зазор шапка → первая карточка: ItemSeparatorComponent рендерится только между элементами,
-    // не после шапки (решение F5 плана).
-    marginBottom: Spacing.sm,
-  },
-  eyebrow: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    // Зазор до прокручиваемого списка (шапка теперь вне FlashList).
+    paddingBottom: Spacing.md,
   },
 });
