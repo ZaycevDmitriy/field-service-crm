@@ -1,21 +1,14 @@
-import { type FC } from 'react';
+import { memo, useMemo, type FC } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
 import {
   OrderFilterEnum,
   OrderFilterLabel,
   ServiceOrderStatusEnum,
-  type IServiceOrder,
+  useOrdersStore,
 } from '@/entities/order';
 import { Spacing } from '@/shared/config';
 import { Chip } from '@/shared/ui';
-
-export interface IOrderStatusFilterProps {
-  value: OrderFilterEnum;
-  onChange: (filter: OrderFilterEnum) => void;
-  // Источник счётчиков — заявки из стора (страница всегда передаёт их).
-  orders: IServiceOrder[];
-}
 
 // Порядок чипов фильтра: Все, Новые, В работе, Готово, Отменено.
 const FILTERS: OrderFilterEnum[] = [
@@ -27,17 +20,24 @@ const FILTERS: OrderFilterEnum[] = [
 ];
 
 // Горизонтальный фильтр статусов со счётчиками. Счётчики считаются из заявок (совпадают с дизайном 6/2/3/1/0).
-export const OrderStatusFilter: FC<IOrderStatusFilterProps> = ({ value, onChange, orders }) => {
-  const countByStatus = (status: ServiceOrderStatusEnum): number =>
-    orders.filter((order) => order.status === status).length;
+const OrderStatusFilterView: FC = () => {
+  const value = useOrdersStore((state) => state.filter);
+  const setFilter = useOrdersStore((state) => state.setFilter);
+  const orders = useOrdersStore((state) => state.orders);
 
-  const counts: Record<OrderFilterEnum, number> = {
-    [OrderFilterEnum.All]: orders.length,
-    [OrderFilterEnum.New]: countByStatus(ServiceOrderStatusEnum.New),
-    [OrderFilterEnum.InProgress]: countByStatus(ServiceOrderStatusEnum.InProgress),
-    [OrderFilterEnum.Done]: countByStatus(ServiceOrderStatusEnum.Done),
-    [OrderFilterEnum.Cancelled]: countByStatus(ServiceOrderStatusEnum.Cancelled),
-  };
+  // Счётчики зависят только от заявок — пересчёт при смене orders, а не при смене фильтра (тап по чипсу).
+  const counts = useMemo<Record<OrderFilterEnum, number>>(() => {
+    const countByStatus = (status: ServiceOrderStatusEnum): number =>
+      orders.filter((order) => order.status === status).length;
+
+    return {
+      [OrderFilterEnum.All]: orders.length,
+      [OrderFilterEnum.New]: countByStatus(ServiceOrderStatusEnum.New),
+      [OrderFilterEnum.InProgress]: countByStatus(ServiceOrderStatusEnum.InProgress),
+      [OrderFilterEnum.Done]: countByStatus(ServiceOrderStatusEnum.Done),
+      [OrderFilterEnum.Cancelled]: countByStatus(ServiceOrderStatusEnum.Cancelled),
+    };
+  }, [orders]);
 
   return (
     <ScrollView
@@ -51,12 +51,16 @@ export const OrderStatusFilter: FC<IOrderStatusFilterProps> = ({ value, onChange
           label={OrderFilterLabel[filter]}
           count={counts[filter]}
           selected={value === filter}
-          onPress={() => onChange(filter)}
+          onPress={() => setFilter(filter)}
         />
       ))}
     </ScrollView>
   );
 };
+
+// memo: родитель (OrdersListHeader) ререндерится на каждое нажатие в поиске; беспропсовый фильтр
+// от этого изолирован и перерисовывается только по своим подпискам (filter/orders) (свод §4.1).
+export const OrderStatusFilter = memo(OrderStatusFilterView);
 
 const styles = StyleSheet.create({
   row: {

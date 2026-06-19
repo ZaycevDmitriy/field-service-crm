@@ -15,9 +15,7 @@ import { OfflineBanner, Text } from '@/shared/ui';
 export const OrdersListHeader: FC = () => {
   const search = useOrdersStore((state) => state.search);
   const setSearch = useOrdersStore((state) => state.setSearch);
-  const filter = useOrdersStore((state) => state.filter);
-  const setFilter = useOrdersStore((state) => state.setFilter);
-  const orders = useOrdersStore((state) => state.orders);
+
   const offline = useAppStore((state) => state.offline);
 
   return (
@@ -26,7 +24,7 @@ export const OrdersListHeader: FC = () => {
         Заявки
       </Text>
       <OrderSearch value={search} onChangeText={setSearch} />
-      <OrderStatusFilter value={filter} onChange={setFilter} orders={orders} />
+      <OrderStatusFilter />
       {offline ? <OfflineBanner /> : null}
     </View>
   );
