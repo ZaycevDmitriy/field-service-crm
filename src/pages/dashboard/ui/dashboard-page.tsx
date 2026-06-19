@@ -8,15 +8,26 @@ import { QuickActionButton } from './quick-action-button';
 import { StatsStrip } from './stats-strip';
 
 import { getNearestOrder, useOrdersStore } from '@/entities/order';
+import { openMapsRoute } from '@/features/open-route';
 import { Spacing } from '@/shared/config';
+import { useCurrentLocation } from '@/shared/lib/location';
+import { useAppStore } from '@/shared/model';
 import { Screen, Text } from '@/shared/ui';
 
 // Экран «Главная»: шапка, статистика дня, hero ближайшей заявки и быстрые действия.
 export const DashboardPage: FC = () => {
   const router = useRouter();
   const orders = useOrdersStore((state) => state.orders);
-  // Производное (решение 4 плана): ближайшая активная заявка считается чистой функцией из стора.
-  const nearestOrder = useMemo(() => getNearestOrder(orders), [orders]);
+  // Однократная инициализация локации на главном экране (неблокирующий фон); координаты — в app-store,
+  // остальные экраны читают готовое значение.
+  useCurrentLocation();
+  const currentLocation = useAppStore((state) => state.currentLocation);
+  // Производное (решение 4 плана): ближайшая заявка — по геодистанции при доступной локации, иначе
+  // по времени визита. Реактивно к смене локации (она в deps).
+  const nearestOrder = useMemo(
+    () => getNearestOrder(orders, currentLocation),
+    [orders, currentLocation],
+  );
 
   const handleOpenNearest = () => {
     if (!nearestOrder) {
@@ -24,8 +35,12 @@ export const DashboardPage: FC = () => {
     }
     router.push({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
   };
-  // Открытие маршрута — Phase 6 (геолокация). Пока no-op.
-  const handleOpenRoute = () => undefined;
+  // Маршрут до ближайшей заявки во внешних Яндекс.Картах (работает и без разрешения геолокации).
+  const handleOpenRoute = () => {
+    if (nearestOrder) {
+      void openMapsRoute(nearestOrder);
+    }
+  };
 
   return (
     <Screen scrollable>

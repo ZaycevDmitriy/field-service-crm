@@ -1,7 +1,7 @@
 import { type FC, memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import type { IServiceOrder } from '../../model';
+import { useOrderDistanceLabel, type IServiceOrder } from '../../model';
 import { OrderStatusBadge } from '../order-status-badge';
 
 import { Radius, Shadows, Spacing, useColors, useOrderStatusColors } from '@/shared/config';
@@ -19,6 +19,8 @@ const OrderCardComponent: FC<IOrderCardProps> = ({ order, onPress }) => {
   const colors = useColors();
   const statusColors = useOrderStatusColors();
   const railColor = statusColors[order.status].text;
+  // Дистанция — производное от текущей локации; null → сегмент скрыт (локация недоступна).
+  const distanceLabel = useOrderDistanceLabel(order);
 
   return (
     <Pressable
@@ -41,9 +43,11 @@ const OrderCardComponent: FC<IOrderCardProps> = ({ order, onPress }) => {
             <Text size="17" weight="bold" style={styles.tabular}>
               {order.scheduledTime}
             </Text>
-            <Text size="13" color="textSecondary" style={styles.tabular}>
-              {` · ${order.distanceLabel}`}
-            </Text>
+            {distanceLabel ? (
+              <Text size="13" color="textSecondary" style={styles.tabular}>
+                {` · ${distanceLabel}`}
+              </Text>
+            ) : null}
           </View>
           <OrderStatusBadge status={order.status} size="md" />
         </View>

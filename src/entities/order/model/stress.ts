@@ -37,7 +37,9 @@ export function makeStressOrders(count: number): IServiceOrder[] {
       description: 'Синтетическая заявка для стресс-теста виртуализации списка.',
       scheduledTime: `${hour}:${minute}`,
       scheduledSlot: `${hour}:00 — ${hour}:59`,
-      distanceLabel: `${((i % 200) / 10).toFixed(1)} км`,
+      // Синтетические координаты в районе Москвы — детерминированный разброс по индексу.
+      latitude: 55.75 + (i % 100) / 1000,
+      longitude: 37.62 + (i % 100) / 1000,
       photos: [],
     });
   }

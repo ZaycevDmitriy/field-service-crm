@@ -12,9 +12,12 @@ import { getDatabase } from '@/shared/lib/db';
 // клиента `@/shared/lib/db`. Потребитель — только стор слайса (`useOrdersStore`).
 //
 // Отклонение от PDR §14: схема выравнена по фактическому `IServiceOrder`, а не дословно по PDR.
-// Колонки `latitude`/`longitude`/`scheduled_at`/`created_at`/`updated_at` из §14 в домене ещё нет —
-// гео и реальные даты вводятся в Phase 6 (тогда же расширяется и схема). Заполнять NOT NULL-колонки
-// выдуманными данными — нарушение «не делаем фичи будущих фаз», поэтому таблицы отражают реальные поля.
+// Колонок `scheduled_at`/`created_at`/`updated_at` из §14 в домене пока нет (реальные даты — позже).
+// Phase 6 добавила `latitude`/`longitude` и убрала производный `distance_label`; схема версионируется
+// через `PRAGMA user_version` с ручной миграцией v1→v2 в `initDatabase` (см. migrateOrdersSchema).
+
+// Версия схемы БД. Поднимать при изменении DDL; миграция выполняется вручную в initDatabase.
+const DATABASE_VERSION = 2;
 
 // Row-интерфейсы: представление строк таблиц (snake_case колонки). Маппятся на домен (camelCase).
 interface IServiceOrderRow {
@@ -26,7 +29,8 @@ interface IServiceOrderRow {
   description: string;
   scheduled_time: string;
   scheduled_slot: string;
-  distance_label: string;
+  latitude: number;
+  longitude: number;
 }
 
 interface IServiceOrderPhotoRow {
@@ -48,7 +52,8 @@ const SCHEMA_SQL = `
     description TEXT NOT NULL,
     scheduled_time TEXT NOT NULL,
     scheduled_slot TEXT NOT NULL,
-    distance_label TEXT NOT NULL
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL
   );
   CREATE TABLE IF NOT EXISTS service_order_photos (
     id TEXT PRIMARY KEY NOT NULL,
@@ -96,7 +101,8 @@ const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServi
   description: row.description,
   scheduledTime: row.scheduled_time,
   scheduledSlot: row.scheduled_slot,
-  distanceLabel: row.distance_label,
+  latitude: row.latitude,
+  longitude: row.longitude,
   photos,
 });
 
@@ -109,7 +115,8 @@ const orderToRow = (order: IServiceOrder): IServiceOrderRow => ({
   description: order.description,
   scheduled_time: order.scheduledTime,
   scheduled_slot: order.scheduledSlot,
-  distance_label: order.distanceLabel,
+  latitude: order.latitude,
+  longitude: order.longitude,
 });
 
 const photoToRow = (orderId: string, photo: IServiceOrderPhoto): IServiceOrderPhotoRow => ({
@@ -126,8 +133,8 @@ const insertOrder = (database: SQLiteDatabase, order: IServiceOrder): Promise<SQ
 
   return database.runAsync(
     `INSERT INTO service_orders
-       (id, status, title, client, address, description, scheduled_time, scheduled_slot, distance_label)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, status, title, client, address, description, scheduled_time, scheduled_slot, latitude, longitude)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     row.id,
     row.status,
     row.title,
@@ -136,7 +143,8 @@ const insertOrder = (database: SQLiteDatabase, order: IServiceOrder): Promise<SQ
     row.description,
     row.scheduled_time,
     row.scheduled_slot,
-    row.distance_label,
+    row.latitude,
+    row.longitude,
   );
 };
 
@@ -171,14 +179,66 @@ const groupPhotosByOrderId = (rows: IServiceOrderPhotoRow[]): Map<string, IServi
   return grouped;
 };
 
+// Миграция схемы заявок до v2 (Phase 6): добавляет координаты в существующие установки и убирает
+// производный distance_label. Идемпотентна и безопасна для свежих установок — операции применяются
+// только если фактическая схема таблицы этого требует (интроспекция через PRAGMA table_info).
+const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
+  const columns = await database.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(service_orders);',
+  );
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  // v1 → v2: координаты. ADD COLUMN — nullable (SQLite запрещает ADD COLUMN NOT NULL к непустой
+  // таблице без DEFAULT); NOT NULL остаётся только в CREATE для свежих установок.
+  if (!columnNames.has('latitude')) {
+    await database.execAsync(
+      'ALTER TABLE service_orders ADD COLUMN latitude REAL;' +
+        ' ALTER TABLE service_orders ADD COLUMN longitude REAL;',
+    );
+    // Backfill по id из сид-данных: единственные заявки в legacy-БД — сид order-1..6 (формы создания
+    // заявок ещё нет). Условие latitude IS NULL делает повторный прогон безопасным.
+    for (const order of MOCK_SERVICE_ORDERS) {
+      await database.runAsync(
+        'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
+        order.latitude,
+        order.longitude,
+        order.id,
+      );
+    }
+  }
+
+  // Убираем производную колонку (PDR §13: производное не храним). DROP COLUMN — SQLite 3.35+ (Expo);
+  // FK фото ссылается на id, поэтому снимки не затрагиваются.
+  if (columnNames.has('distance_label')) {
+    await database.execAsync('ALTER TABLE service_orders DROP COLUMN distance_label;');
+  }
+};
+
 export const orderDatabaseService = {
-  // Создаёт схему и включает foreign keys. DDL/PRAGMA — через execAsync (bulk, без параметров).
+  // Создаёт схему, включает foreign keys и применяет миграции по PRAGMA user_version.
+  // DDL/PRAGMA — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для свежих установок
+  // создаёт таблицы уже с координатами, для существующих — no-op (доводит migrateOrdersSchema).
   async initDatabase(): Promise<void> {
     try {
       const database = await getDatabase();
       await database.execAsync(
         `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; ${SCHEMA_SQL}`,
       );
+
+      const versionRow = await database.getFirstAsync<{ user_version: number }>(
+        'PRAGMA user_version;',
+      );
+      const currentVersion = versionRow?.user_version ?? 0;
+
+      if (currentVersion < DATABASE_VERSION) {
+        await migrateOrdersSchema(database);
+        // user_version нельзя параметризовать; DATABASE_VERSION — модульная числовая константа.
+        await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
+        console.info(
+          `[orderDatabaseService.initDatabase] Схема мигрирована ${currentVersion} → ${DATABASE_VERSION}.`,
+        );
+      }
+
       console.info('[orderDatabaseService.initDatabase] БД инициализирована.');
     } catch (error) {
       console.error('[orderDatabaseService.initDatabase] Не удалось инициализировать БД.', error);

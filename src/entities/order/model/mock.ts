@@ -4,7 +4,9 @@ import type { IServiceOrder } from './types';
 // Статичные mock-заявки — источник сида локальной SQLite-БД (`entities/order/api/orderDatabaseService`
 // наполняет ими БД при первом старте). Ровно 6 заявок: 2 New / 3 InProgress / 1 Done / 0 Cancelled —
 // исходные счётчики дашборда и фильтра «Все(6)/Новые(2)/В работе(3)/Готово(1)/Отменено(—)».
-// order-1 — самая ранняя активная заявка (09:00), её возвращает getNearestOrder для hero дашборда.
+// Координаты — район Москвы (один город), точки разнесены, чтобы геодистанция и сортировка
+// getNearestOrder давали разный порядок. Без доступной локации «ближайшая» = самая ранняя по времени
+// (09:00 — order-1), с локацией — ближайшая по геодистанции.
 export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
   {
     id: 'order-1',
@@ -16,7 +18,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Установить и настроить Wi-Fi роутер у абонента. Проверить уровень сигнала в комнатах, выдать памятку по доступу к сети.',
     scheduledTime: '09:00',
     scheduledSlot: '12:00 — 13:00',
-    distanceLabel: '4.2 км',
+    latitude: 55.7558,
+    longitude: 37.6173,
     photos: [],
   },
   {
@@ -29,7 +32,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Демонтировать вышедший из строя маршрутизатор, установить новый. Перенести настройки сети и проверить стабильность подключения.',
     scheduledTime: '10:30',
     scheduledSlot: '10:30 — 11:30',
-    distanceLabel: '6.8 км',
+    latitude: 55.782,
+    longitude: 37.634,
     photos: [
       {
         id: 'photo-2-1',
@@ -56,7 +60,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Подключить и настроить IPTV-приставку. Проверить воспроизведение каналов, обновить прошивку при необходимости.',
     scheduledTime: '11:15',
     scheduledSlot: '11:00 — 12:00',
-    distanceLabel: '2.1 км',
+    latitude: 55.708,
+    longitude: 37.589,
     photos: [],
   },
   {
@@ -69,7 +74,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Найти причину обрывов связи на абонентской линии. Замерить параметры, при необходимости заменить участок кабеля.',
     scheduledTime: '13:00',
     scheduledSlot: '13:00 — 14:00',
-    distanceLabel: '8.5 км',
+    latitude: 55.769,
+    longitude: 37.601,
     photos: [],
   },
   {
@@ -82,7 +88,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Завести оптический кабель в квартиру, установить ONT, настроить подключение по договору. Провести инструктаж абонента.',
     scheduledTime: '15:30',
     scheduledSlot: '15:00 — 16:00',
-    distanceLabel: '11.0 км',
+    latitude: 55.766,
+    longitude: 37.642,
     photos: [],
   },
   {
@@ -95,7 +102,8 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
       'Восстановить повреждённый участок кабеля в подъезде, восстановить связь у абонентов стояка. Зафиксировать результат фотоотчётом.',
     scheduledTime: '08:15',
     scheduledSlot: '08:00 — 09:00',
-    distanceLabel: '3.4 км',
+    latitude: 55.74,
+    longitude: 37.66,
     photos: [
       {
         id: 'photo-6-1',
