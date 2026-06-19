@@ -43,6 +43,7 @@ This command will move the starter code to the **app-example** directory and cre
 | [Планы по фазам](docs/plans/README.md) | Пошаговые планы реализации (Phase 1–9) |
 | [Orders Logic (Phase 3)](docs/orders-logic.md) | Стор заявок, поиск, фильтры, переходы статусов |
 | [SQLite Persistence (Phase 4)](docs/sqlite-persistence.md) | Локальное хранилище заявок и фото в SQLite |
+| [Location & Maps (Phase 6)](docs/location-maps.md) | Геолокация, дистанция до заявки, маршрут во внешних картах |
 
 ## Learn more
 
