@@ -45,7 +45,14 @@ async function scheduleWithPermission(
       'Чтобы получать напоминания по заявке, включите уведомления в настройках.',
       [
         { text: 'Отмена', style: 'cancel' },
-        { text: 'Открыть настройки', onPress: () => void Linking.openSettings() },
+        {
+          text: 'Открыть настройки',
+          onPress: () => {
+            Linking.openSettings().catch((error) => {
+              console.error('[promptOrderReminder] Не удалось открыть настройки.', error);
+            });
+          },
+        },
       ],
     );
 
@@ -71,7 +78,9 @@ export function promptOrderReminder(order: IServiceOrder): void {
   const buttons: AlertButton[] = [
     ...REMINDER_OFFSETS.map((offset) => ({
       text: offset.label,
-      onPress: () => void scheduleWithPermission(order, offset),
+      onPress: () => {
+        void scheduleWithPermission(order, offset);
+      },
     })),
     { text: 'Отмена', style: 'cancel' },
   ];
