@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 // Имя файла локальной SQLite-БД. Открывается лениво при первом обращении.
-const DATABASE_NAME = 'fieldmate.db';
+const DATABASE_NAME = 'onsite.db';
 
 // Singleton-промис соединения: кэшируется в модульной переменной, поэтому повторные
 // вызовы getDatabase возвращают один и тот же инстанс (одно соединение на процесс).

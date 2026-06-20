@@ -2,8 +2,8 @@ import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
 import { type FC, useEffect } from 'react';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
 import { useColorScheme } from '@/shared/config';
@@ -22,7 +22,7 @@ const RootLayout: FC = () => {
     useOrdersStore.getState().initialize();
     // Создаём Android-канал напоминаний до первого планирования (на iOS — no-op). Module-level
     // setNotificationHandler уже выставлен самим импортом сегмента notifications.
-    void configureNotifications();
+    configureNotifications();
   }, []);
 
   return (

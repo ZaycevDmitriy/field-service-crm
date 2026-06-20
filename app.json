@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "field-service-crm",
-    "slug": "field-service-crm",
+    "name": "Onsite",
+    "slug": "onsite",
     "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fieldservicecrm",
+    "scheme": "onsite",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.field-service-crm",
+      "bundleIdentifier": "com.zaycevdi.onsite",
       "infoPlist": {
         "LSApplicationQueriesSchemes": ["yandexmaps"]
       }
@@ -50,7 +50,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "FieldMate использует камеру для фотоотчёта по заявке.",
+          "cameraPermission": "Onsite использует камеру для фотоотчёта по заявке.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -58,13 +58,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "FieldMate использует галерею для добавления фото к заявке."
+          "photosPermission": "Onsite использует галерею для добавления фото к заявке."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "FieldMate использует геолокацию для расчёта дистанции до заявки и построения маршрута.",
+          "locationWhenInUsePermission": "Onsite использует геолокацию для расчёта дистанции до заявки и построения маршрута.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
