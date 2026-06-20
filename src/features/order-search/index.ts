@@ -1,1 +1,1 @@
-export { OrderSearch, type IOrderSearchProps } from './ui/order-search';
+export { OrderSearch } from './ui/order-search';
