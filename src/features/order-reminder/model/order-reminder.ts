@@ -1,4 +1,4 @@
-import { Alert, type AlertButton, Linking } from 'react-native';
+import { Alert, Linking, type AlertButton } from 'react-native';
 
 import type { IServiceOrder } from '@/entities/order';
 import {
