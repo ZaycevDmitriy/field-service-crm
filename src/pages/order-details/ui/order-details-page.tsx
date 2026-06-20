@@ -11,6 +11,7 @@ import {
   useOrdersStore,
 } from '@/entities/order';
 import { OpenRouteButton } from '@/features/open-route';
+import { OrderReminderButton } from '@/features/order-reminder';
 import { useOrderStatusActions } from '@/features/order-status';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, DiagnosticCard, ErrorState, IconSymbol, ScreenHeader, Text } from '@/shared/ui';
@@ -105,16 +106,19 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
         </DiagnosticCard>
 
         <DiagnosticCard title="Время">
-          <View style={styles.tileRow}>
-            <InfoTile icon="clock" />
-            <View style={styles.tileText}>
-              <Text size="15" weight="medium">
-                Сегодня, {order.scheduledTime}
-              </Text>
-              <Text size="13" color="textSecondary">
-                Слот: {order.scheduledSlot}
-              </Text>
+          <View style={styles.sectionColumn}>
+            <View style={styles.tileRow}>
+              <InfoTile icon="clock" />
+              <View style={styles.tileText}>
+                <Text size="15" weight="medium">
+                  Сегодня, {order.scheduledTime}
+                </Text>
+                <Text size="13" color="textSecondary">
+                  Слот: {order.scheduledSlot}
+                </Text>
+              </View>
             </View>
+            <OrderReminderButton order={order} />
           </View>
         </DiagnosticCard>
 

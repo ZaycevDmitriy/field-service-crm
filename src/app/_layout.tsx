@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 
 import { useOrdersStore } from '@/entities/order';
 import { useColorScheme } from '@/shared/config';
+import { configureNotifications } from '@/shared/lib/notifications';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -19,6 +20,9 @@ const RootLayout: FC = () => {
   // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
   useEffect(() => {
     useOrdersStore.getState().initialize();
+    // Создаём Android-канал напоминаний до первого планирования (на iOS — no-op). Module-level
+    // setNotificationHandler уже выставлен самим импортом сегмента notifications.
+    void configureNotifications();
   }, []);
 
   return (
