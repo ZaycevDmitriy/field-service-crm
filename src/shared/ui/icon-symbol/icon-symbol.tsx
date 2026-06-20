@@ -44,6 +44,7 @@ const MAPPING = {
   'bolt.slash.fill': 'flash-off',
   'arrow.triangle.2.circlepath.camera.fill': 'flip-camera-ios',
   'photo.on.rectangle': 'photo-library',
+  'bell.fill': 'notifications',
 } satisfies Partial<IconMapping>;
 
 /**
