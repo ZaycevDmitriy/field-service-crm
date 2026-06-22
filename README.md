@@ -35,6 +35,67 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
+## EAS Build и EAS Update
+
+Доставка приложения разделена на два контура: **native (EAS Build)** — бинарь с нативным кодом, и **JS/asset (EAS Update)** — OTA-обновление поверх уже установленного бинаря.
+
+> Команды `eas` требуют Expo-аккаунта (`eas login`) и устанавливаются глобально: `npm i -g eas-cli`.
+
+### Development build
+
+`expo-dev-client` даёт кастомный dev-клиент (замена Expo Go: поддерживает нативные модули проекта — камера, SQLite, геолокация, уведомления, `expo-updates`). Сборка и запуск:
+
+```bash
+eas build --profile development --platform android
+npx expo start --dev-client
+```
+
+Установить полученный `.apk` на устройство/эмулятор, затем подключиться к Metro из dev-клиента.
+
+### EAS Build (профили)
+
+Профили заданы в [`eas.json`](eas.json):
+
+| Профиль | Назначение | Distribution | Channel |
+|---------|-----------|--------------|---------|
+| `development` | dev-клиент с Metro | internal | development |
+| `preview` | internal-демо без Metro (release JS) | internal | preview |
+| `production` | стора-сборка, autoIncrement версии | store | production |
+
+```bash
+eas build --profile development --platform android
+eas build --profile preview --platform android
+eas build --profile production --platform android
+```
+
+iOS-сборки опциональны (нужен Apple Developer Account) — добавить `--platform ios`.
+
+Перед первой сборкой связать проект с EAS и сконфигурировать обновления (заполняет `extra.eas.projectId` и `updates.url` в [`app.config.ts`](app.config.ts)):
+
+```bash
+eas init
+eas update:configure
+```
+
+### EAS Update (OTA-демо)
+
+Опубликовать JS/asset-обновление в канал — оно доедет до сборок с тем же `runtimeVersion`:
+
+```bash
+eas update --channel preview --message "Правка текста на экране настроек"
+```
+
+На устройстве экран **Настройки → Обновление** показывает channel/runtime и кнопки «Проверить обновления» / «Перезагрузить приложение»: «Проверить» скачивает доступное обновление, «Перезагрузить» применяет его. В режиме разработки OTA отключены — экран показывает «Недоступно в dev» и не падает.
+
+### Граница native vs JS
+
+| Что меняли | Как доставляется |
+|------------|------------------|
+| Нативный код и пакеты (`expo-camera`, `expo-updates`, разрешения, иконки/сплеш, версия SDK) | Новый **EAS Build** (OTA не поможет) |
+| Только JS/TS и ассеты (логика, UI, тексты, изображения) | **EAS Update** (OTA) |
+
+`runtimeVersion` в [`app.config.ts`](app.config.ts) задан политикой `fingerprint`: Expo вычисляет отпечаток нативного слоя (`@expo/fingerprint`) и помечает им и сборку, и обновление. Обновление с несовместимым отпечатком (изменился native-слой) не применится к старому бинарю — это и есть автоматическая граница native-vs-JS.
+
 ## Documentation
 
 | Guide | Description |
