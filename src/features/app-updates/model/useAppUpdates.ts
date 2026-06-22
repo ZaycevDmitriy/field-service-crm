@@ -13,13 +13,25 @@ import { useAppStore } from '@/shared/model';
 // Плейсхолдер недоступного значения (вынесен — иначе sonarjs/no-duplicate-string на повторах).
 const EMPTY = '—';
 
+// '—' для отсутствующего ИЛИ пустого значения: в dev через Metro `Updates.channel` отдаёт пустую
+// строку '', которую `?? EMPTY` не ловит (только null/undefined).
+function orEmpty(value: string | null | undefined): string {
+  return value && value.length > 0 ? value : EMPTY;
+}
+
+// Длинный fingerprint-хеш (40 символов) укорачиваем для строки диагностики — иначе label «Runtime
+// version» ломается по буквам. Короткие значения (политики/версии вида 1.0.0) показываем целиком.
+function shortenRuntime(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 12)}…` : value;
+}
+
 // Статическая часть диагностики вычисляется один раз при импорте: версия из конфига и авторитетные
 // значения из expo-updates (channel/runtimeVersion фиксируются нативной сборкой).
 const APP_VERSION = Constants.expoConfig?.version ?? EMPTY;
-const CHANNEL = Updates.channel ?? EMPTY;
-const RUNTIME_VERSION = Updates.runtimeVersion ?? EMPTY;
+const CHANNEL = orEmpty(Updates.channel);
+const RUNTIME_VERSION = shortenRuntime(orEmpty(Updates.runtimeVersion));
 
-// `extra.buildProfile` задаётся только в EAS Build (built-in EAS_BUILD_PROFILE). Локально ключ
+// `extra.buildProfile` задаётся только в EAS Build (built-in EAS_BUILD_PROFILE). Локально/в dev ключ
 // отсутствует → падаем на авторитетный `Updates.channel` (см. app.config.ts).
 const RAW_BUILD_PROFILE: unknown = Constants.expoConfig?.extra?.buildProfile;
 const BUILD_PROFILE =
