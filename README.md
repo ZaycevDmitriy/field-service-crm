@@ -1,66 +1,177 @@
-# Welcome to your Expo app 👋
+# Onsite
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**English** · [Русский](README.ru.md)
 
-## Get started
+Onsite is a mobile mini-CRM for on-site field-service technicians (router installs, line
+diagnostics, cable repair). It is a portfolio project built with Expo and React Native, focused on
+offline-first behavior, native device APIs, and a clean feature-based architecture.
 
-1. Install dependencies
+## Overview
 
-   ```bash
-   npm install
-   ```
+A technician opens the app to their nearest active job, works through a list of service orders
+(search, filter by status), opens an order to follow its status flow (New → In Progress →
+Done / Cancelled), attaches a photo report, builds a route in external maps, and sets visit
+reminders. All data is stored locally in SQLite, so the app works without a network connection. App
+delivery is split into two channels: **native** (EAS Build) and **JS/asset** (EAS Update OTA).
 
-2. Start the app
+## What this project demonstrates
 
-   ```bash
-   npx expo start
-   ```
+- Expo Router file-based navigation
+- Expo Development Build
+- EAS Build profiles
+- EAS Update OTA flow
+- SQLite local persistence
+- Native permissions
+- Camera and photo report flow
+- Location and external maps
+- Local notifications
+- Feature-based architecture
+- Reusable React Native UI components
+- Light and dark theme driven by the system color scheme
+- Loading, empty, error, and offline states
 
-In the output, you'll find options to open the app in a
+## Demo
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+There is no hosted demo — run the app locally on a development build (see
+[Getting Started](#getting-started)). The screenshots below were captured on the iOS simulator.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Live OTA demo: **Settings → Update** shows the channel / runtime version and the
+"Check for updates" / "Reload" actions; publish an `eas update` and watch it land on an already
+installed build (see [EAS Update Demo](#eas-update-demo)).
 
-## Get a fresh project
+## Screenshots
 
-When you're ready, run:
+> iOS simulator, Moscow location set for the geo features. Light and dark follow the system
+> appearance.
 
-```bash
-npm run reset-project
+| Screen | Light | Dark |
+|--------|-------|------|
+| Dashboard | ![Dashboard, light](screenshots/dashboard-light.png) | ![Dashboard, dark](screenshots/dashboard-dark.png) |
+| Orders | ![Orders, light](screenshots/orders-light.png) | ![Orders, dark](screenshots/orders-dark.png) |
+| Order details | ![Order details, light](screenshots/order-details-light.png) | ![Order details, dark](screenshots/order-details-dark.png) |
+| Settings | ![Settings, light](screenshots/settings-light.png) | ![Settings, dark](screenshots/settings-dark.png) |
+
+Photo report flow — camera permission gate with a gallery fallback. The capture screen is
+intentionally dark in both themes:
+
+<img src="screenshots/photo-flow.png" alt="Photo report flow" width="300" />
+
+## Features
+
+- **Dashboard** — greeting, today's summary (new / in progress / done) and the nearest active order
+  by straight-line distance.
+- **Orders list** — virtualized list (FlashList) with case-insensitive search by client or address
+  and status filter chips.
+- **Order details** — status flow (New → In Progress → Done / Cancelled), client, address, time
+  slot and description.
+- **Photo report** — attach photos to an order from the camera or the gallery, behind a permission
+  gate.
+- **Location & route** — straight-line distance to each order; "Open route" hands off to the system
+  maps app.
+- **Reminders** — a local notification for the visit time.
+- **Offline-first** — orders and photos persist in SQLite; an offline banner and error / empty
+  states are handled.
+- **OTA updates** — EAS Update gated by a fingerprint runtime version.
+- **Theming** — light and dark themes follow the OS color scheme.
+
+## Tech Stack
+
+- **Runtime:** Expo SDK 56, React Native 0.85, React 19 (Hermes, New Architecture)
+- **Language:** TypeScript 6 (`strict`, no `any`)
+- **Navigation:** Expo Router (typed routes, React Compiler)
+- **State:** Zustand (long-lived state only)
+- **Persistence:** expo-sqlite
+- **Native APIs:** expo-camera, expo-image-picker, expo-location, expo-notifications, expo-updates
+- **UI / animation:** custom UI kit, react-native-reanimated, @shopify/flash-list,
+  @react-native-vector-icons/material-icons
+- **Tooling:** ESLint 9 (+ SonarJS), Prettier, jest-expo (unit tests)
+
+## Architecture
+
+Feature-Sliced Design (FSD-lite) on top of Expo Router. Imports flow strictly downward:
+
+```
+app → pages → features → entities → shared
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- **app** — Expo Router route files (thin) plus the root layout (providers, DB init, status bar).
+- **pages** — one slice per screen; composes features and entities.
+- **features** — user actions: `order-search`, `order-filter`, `order-status`, `photo-capture`,
+  `order-reminder`, `open-route`, `app-updates`.
+- **entities** — the `order` business entity (`model` / `api` / `ui`). Photos are part of the order
+  aggregate, not a separate entity.
+- **shared** — project-agnostic UI kit, theme tokens and libs (`date`, `geo`, `location`,
+  `notifications`, `db`, `invariant`).
 
-## EAS Build и EAS Update
+Rules: a slice imports only from layers strictly below it; slices in the same layer never import
+each other; a slice is consumed only through its public API (`index.ts`). Native APIs and
+persistence live in services (`entities/*/api`, `shared/lib`); UI and the store never call them
+directly. Long-lived state lives in Zustand; transient screen state stays local.
 
-Доставка приложения разделена на два контура: **native (EAS Build)** — бинарь с нативным кодом, и **JS/asset (EAS Update)** — OTA-обновление поверх уже установленного бинаря.
+## Project Structure
 
-> Команды `eas` требуют Expo-аккаунта (`eas login`) и устанавливаются глобально: `npm i -g eas-cli`.
+```
+src/
+  app/                  # Expo Router routes (thin) + root layout
+    (tabs)/             #   dashboard, orders, settings
+    orders/[orderId]    #   order details
+    camera/[orderId]    #   photo capture
+  pages/                # dashboard, orders, order-details, photo, settings
+  features/             # order-search, order-filter, order-status, photo-capture,
+                        # order-reminder, open-route, app-updates
+  entities/
+    order/              # model (types, store, getNearestOrder), api, ui
+  shared/
+    config/theme        # color / spacing / radius / typography tokens
+    ui/                 # business-agnostic UI kit
+    lib/                # date, geo, location, notifications, db, invariant
+    model/              # app-wide store (offline, location, update checks)
+```
 
-### Development build
+## Getting Started
 
-`expo-dev-client` даёт кастомный dev-клиент (замена Expo Go: поддерживает нативные модули проекта — камера, SQLite, геолокация, уведомления, `expo-updates`). Сборка и запуск:
+Prerequisites: Node 20+, npm, Xcode (iOS simulator) or Android Studio (emulator), and a
+**development build** of the app. This project uses native modules, so Expo Go is not supported —
+see [Development Build](#development-build).
+
+```bash
+npm install        # install dependencies
+npm start          # start Metro for the dev client (expo start --dev-client)
+npm run ios        # open on the iOS simulator
+npm run android    # open on an Android emulator
+```
+
+Quality gates:
+
+```bash
+npm run check      # lint + typecheck + format:check
+npm test           # unit tests (jest-expo)
+```
+
+## Development Build
+
+`expo-dev-client` provides a custom dev client (a replacement for Expo Go that supports the
+project's native modules — camera, SQLite, location, notifications, `expo-updates`). Build and run:
 
 ```bash
 eas build --profile development --platform android
-npx expo start --dev-client
+npm start
 ```
 
-Установить полученный `.apk` на устройство/эмулятор, затем подключиться к Metro из dev-клиента.
+Install the resulting `.apk` on a device / emulator, then connect to Metro from the dev client.
 
-### EAS Build (профили)
+> The `eas` commands require an Expo account (`eas login`) and the CLI installed globally:
+> `npm i -g eas-cli`.
 
-Профили заданы в [`eas.json`](eas.json):
+## EAS Build
 
-| Профиль | Назначение | Distribution | Channel |
-|---------|-----------|--------------|---------|
-| `development` | dev-клиент с Metro | internal | development |
-| `preview` | internal-демо без Metro (release JS) | internal | preview |
-| `production` | стора-сборка, autoIncrement версии | store | production |
+Profiles are defined in [`eas.json`](eas.json):
+
+| Profile | Purpose | Distribution | Channel |
+|---------|---------|--------------|---------|
+| `development` | dev client with Metro | internal | development |
+| `preview` | internal demo without Metro (release JS) | internal | preview |
+| `production` | store build, auto-incremented version | store | production |
 
 ```bash
 eas build --profile development --platform android
@@ -68,54 +179,85 @@ eas build --profile preview --platform android
 eas build --profile production --platform android
 ```
 
-iOS-сборки опциональны (нужен Apple Developer Account) — добавить `--platform ios`.
+iOS builds are optional (they require an Apple Developer account) — add `--platform ios`.
 
-Перед первой сборкой связать проект с EAS и сконфигурировать обновления (заполняет `extra.eas.projectId` и `updates.url` в [`app.config.ts`](app.config.ts)):
+Before the first build, link the project to EAS and configure updates (this fills `extra.eas.projectId`
+and `updates.url` in [`app.config.ts`](app.config.ts)):
 
 ```bash
 eas init
 eas update:configure
 ```
 
-### EAS Update (OTA-демо)
+## EAS Update Demo
 
-Опубликовать JS/asset-обновление в канал — оно доедет до сборок с тем же `runtimeVersion`:
+Publish a JS/asset update to a channel — it reaches builds with the same `runtimeVersion`:
 
 ```bash
-eas update --channel preview --message "Правка текста на экране настроек"
+eas update --channel preview --message "Tweak the settings screen copy"
 ```
 
-На устройстве экран **Настройки → Обновление** показывает channel/runtime и кнопки «Проверить обновления» / «Перезагрузить приложение»: «Проверить» скачивает доступное обновление, «Перезагрузить» применяет его. В режиме разработки OTA отключены — экран показывает «Недоступно в dev» и не падает.
+On the device, **Settings → Update** shows the channel / runtime version and the
+"Check for updates" / "Reload" actions: "Check" downloads an available update, "Reload" applies it.
+OTA is disabled in development mode — the screen shows "Unavailable in dev" and does not crash.
 
-### Граница native vs JS
+**Native vs JS boundary:**
 
-| Что меняли | Как доставляется |
-|------------|------------------|
-| Нативный код и пакеты (`expo-camera`, `expo-updates`, разрешения, иконки/сплеш, версия SDK) | Новый **EAS Build** (OTA не поможет) |
-| Только JS/TS и ассеты (логика, UI, тексты, изображения) | **EAS Update** (OTA) |
+| What changed | How it ships |
+|--------------|--------------|
+| Native code and packages (`expo-camera`, `expo-updates`, permissions, icons / splash, SDK version) | A new **EAS Build** (OTA cannot help) |
+| Only JS / TS and assets (logic, UI, copy, images) | An **EAS Update** (OTA) |
 
-`runtimeVersion` в [`app.config.ts`](app.config.ts) задан политикой `fingerprint`: Expo вычисляет отпечаток нативного слоя (`@expo/fingerprint`) и помечает им и сборку, и обновление. Обновление с несовместимым отпечатком (изменился native-слой) не применится к старому бинарю — это и есть автоматическая граница native-vs-JS.
+`runtimeVersion` in [`app.config.ts`](app.config.ts) uses the `fingerprint` policy: Expo computes a
+fingerprint of the native layer (`@expo/fingerprint`) and stamps both the build and the update with
+it. An update whose fingerprint is incompatible (the native layer changed) will not apply to an old
+binary — that is the automatic native-vs-JS boundary.
 
-## Documentation
+## Design Source
 
-| Guide | Description |
-|-------|-------------|
-| [PDR](docs/PDR.md) | Полная спецификация проекта (источник истины) |
-| [Планы по фазам](docs/plans/README.md) | Пошаговые планы реализации (Phase 1–9) |
-| [Orders Logic (Phase 3)](docs/orders-logic.md) | Стор заявок, поиск, фильтры, переходы статусов |
-| [SQLite Persistence (Phase 4)](docs/sqlite-persistence.md) | Локальное хранилище заявок и фото в SQLite |
-| [Location & Maps (Phase 6)](docs/location-maps.md) | Геолокация, дистанция до заявки, маршрут во внешних картах |
+The UI was implemented from a design prototype handoff (screens, spacing and color tokens). The
+prototype lives in `design/` and is kept out of the repository — it is reference material, not app
+source. Deviations from the prototype are documented in the project's PDR.
 
-## Learn more
+## Design Decisions
 
-To learn more about developing your project with Expo, look at the following resources:
+- **FSD-lite over a flat structure** — explicit ownership and one-directional imports keep features
+  isolated and testable.
+- **Zustand for long-lived state only** — orders and app-wide flags live in stores; transient screen
+  state stays local component state.
+- **A custom UI kit instead of a component library** — demonstrates React Native UI fundamentals and
+  keeps the dependency surface small.
+- **System-driven theme** — light / dark follow the OS appearance; no manual in-app toggle in the
+  MVP.
+- **FlashList v2 for the orders list** — virtualization for large lists; `maintainVisibleContentPosition`
+  is disabled when the data set is fully replaced on filter / search so the list does not jump.
+- **Fingerprint runtime version** — an EAS Update only lands on builds with a compatible native
+  fingerprint, which enforces the native-vs-JS boundary automatically.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Trade-offs
 
-## Join the community
+- No backend in MVP: SQLite was chosen to focus on offline-first mobile behavior and Expo native
+  APIs.
+- No authentication: the project focuses on field-service workflow, not account management.
+- No full map screen: external maps are enough for MVP and reduce scope.
+- No UI library: custom components demonstrate React Native UI fundamentals.
+- Theme: light and dark are both implemented and follow the OS appearance; a manual in-app theme
+  switch (light / dark / system) is intentionally left as future work.
+- No separate Android UI: the React Native implementation uses one shared UI with platform-specific
+  adjustments only where necessary.
+- Local notifications only: push notifications require a backend and credentials, so they are future
+  scope.
 
-Join our community of developers creating universal apps.
+## Future Improvements
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Documented but intentionally not implemented in the MVP:
+
+- A backend with authentication and multi-device sync
+- Push notifications (require a backend and credentials)
+- A full in-app map screen
+- A manual in-app theme switch (light / dark / system)
+- CI (GitHub Actions) running lint, typecheck and tests
+
+## License
+
+[MIT](LICENSE) © 2026 Dmitriy Zaycev

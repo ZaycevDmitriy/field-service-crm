@@ -115,25 +115,10 @@ module.exports = defineConfig([
     },
   },
 
-  // Правила Jest только для тестовых файлов.
+  // Правила Jest только для тестовых файлов (версия раннера определяется авто-детектом плагина).
   {
     files: ['**/__tests__/**/*.{ts,tsx}', '**/*.{test,spec}.{ts,tsx}'],
     ...jest.configs['flat/recommended'],
-    // Раннер jest вводится в Phase 9 (PDR §22); до его установки плагин не может определить версию
-    // и падает на rule `jest/no-deprecated-functions`. Задаём версию явно (под eslint-plugin-jest 29),
-    // чтобы тест-задел Phase 6 не ломал `npm run lint`.
-    settings: {
-      jest: {
-        version: 29,
-      },
-    },
-    rules: {
-      ...jest.configs['flat/recommended'].rules,
-      // Тест-задел Phase 6 — таблица кейсов + чистый прогон без jest-глобалов (`it`/`describe`),
-      // т.к. раннера ещё нет. SonarJS считает такой `*.test.ts` пустым → отключаем правило для тестов
-      // (вернётся к работе само, когда в Phase 9 появятся настоящие тесты).
-      'sonarjs/no-empty-test-file': 'off',
-    },
   },
 
   // Prettier — последним, чтобы отключить конфликтующие стилевые правила.
