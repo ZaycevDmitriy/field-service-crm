@@ -1,8 +1,10 @@
-import { type FC } from 'react';
+import { type FC, type ReactNode } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { useOrdersStore } from '@/entities/order';
+import { useAppUpdates } from '@/features/app-updates';
 import { Radius, Spacing, useColors } from '@/shared/config';
+import { formatDateTime } from '@/shared/lib/date';
 import {
   Badge,
   Button,
@@ -13,14 +15,15 @@ import {
   Text,
 } from '@/shared/ui';
 
-// Экран «Настройки»: статическая диагностика доставки (EAS) и данные. Значения статичны, кнопки no-op (Phase 8).
+// Экран «Настройки»: живая диагностика доставки (EAS Build/Update) через useAppUpdates и управление
+// локальными данными. Нативный expo-updates инкапсулирован в хуке — страница его не импортирует.
 export const SettingsPage: FC = () => {
   const colors = useColors();
   // Селективная выборка: ререндер только при изменении счётчика/референса экшена.
   const ordersCount = useOrdersStore((state) => state.orders.length);
   const clearDatabase = useOrdersStore((state) => state.clearDatabase);
-  // Updates/перезагрузка — Phase 8. Пока no-op.
-  const noop = () => undefined;
+  const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
+    useAppUpdates();
 
   // Подтверждение деструктивной очистки → экшен стора (ошибку логирует стор/сервис).
   const handleClearDatabase = () => {
@@ -39,6 +42,32 @@ export const SettingsPage: FC = () => {
       ],
     );
   };
+
+  // Бейдж статуса обновления: dev-недоступность приоритетнее наличия обновления.
+  let updateBadge: ReactNode;
+  if (!isUpdatesEnabled) {
+    updateBadge = <Badge variant="neutral">Недоступно в dev</Badge>;
+  } else if (diagnostics.isUpdateAvailable) {
+    updateBadge = <Badge variant="warning">Доступно обновление</Badge>;
+  } else {
+    updateBadge = <Badge variant="success">Актуально</Badge>;
+  }
+
+  // Пояснение под кнопками: ошибка (включая offline) приоритетнее подсказки про dev.
+  let updateHint: ReactNode = null;
+  if (errorMessage) {
+    updateHint = (
+      <Text size="13" color="danger">
+        {errorMessage}
+      </Text>
+    );
+  } else if (!isUpdatesEnabled) {
+    updateHint = (
+      <Text size="13" color="textSecondary">
+        OTA-обновления работают только в сборке EAS, не в режиме разработки.
+      </Text>
+    );
+  }
 
   return (
     <Screen scrollable>
@@ -66,10 +95,10 @@ export const SettingsPage: FC = () => {
         </DiagnosticCard>
 
         <DiagnosticCard title="Приложение" padded={false}>
-          <DiagnosticRow label="Версия" value="1.0.0" />
-          <DiagnosticRow label="Build profile" value="preview" />
-          <DiagnosticRow label="Channel" value="preview" />
-          <DiagnosticRow label="Runtime version" value="1.0.0" isLast />
+          <DiagnosticRow label="Версия" value={diagnostics.version} />
+          <DiagnosticRow label="Build profile" value={diagnostics.buildProfile} />
+          <DiagnosticRow label="Channel" value={diagnostics.channel} />
+          <DiagnosticRow label="Runtime version" value={diagnostics.runtimeVersion} isLast />
         </DiagnosticCard>
 
         <DiagnosticCard title="Обновление">
@@ -80,25 +109,29 @@ export const SettingsPage: FC = () => {
                   Последняя проверка
                 </Text>
                 <Text size="15" weight="medium">
-                  Сегодня, 10:42
+                  {diagnostics.lastCheck
+                    ? formatDateTime(new Date(diagnostics.lastCheck))
+                    : 'Ещё не проверялось'}
                 </Text>
               </View>
-              <Badge variant="success">Актуально</Badge>
+              {updateBadge}
             </View>
             <Button
               title="Проверить обновления"
               variant="primary"
               fullWidth
-              onPress={noop}
+              loading={isChecking}
+              onPress={checkForUpdate}
               leftIcon={<IconSymbol name="arrow.down.circle" size={18} color={colors.white} />}
             />
             <Button
               title="Перезагрузить приложение"
               variant="secondary"
               fullWidth
-              onPress={noop}
+              onPress={reloadApp}
               leftIcon={<IconSymbol name="arrow.clockwise" size={18} color={colors.textPrimary} />}
             />
+            {updateHint}
           </View>
         </DiagnosticCard>
 
