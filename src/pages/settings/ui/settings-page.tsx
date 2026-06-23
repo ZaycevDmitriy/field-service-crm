@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { type FC, useMemo } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,6 +17,14 @@ export const SettingsPage: FC = () => {
   const clearDatabase = useOrdersStore((state) => state.clearDatabase);
   const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
     useAppUpdates();
+
+  const lastCheckLabel = useMemo(
+    () =>
+      diagnostics.lastCheck
+        ? formatDateTime(new Date(diagnostics.lastCheck))
+        : 'Ещё не проверялось',
+    [diagnostics.lastCheck],
+  );
 
   const handleClearDatabase = () => {
     Alert.alert(
@@ -84,9 +92,7 @@ export const SettingsPage: FC = () => {
                   Последняя проверка
                 </Text>
                 <Text size="15" weight="medium">
-                  {diagnostics.lastCheck
-                    ? formatDateTime(new Date(diagnostics.lastCheck))
-                    : 'Ещё не проверялось'}
+                  {lastCheckLabel}
                 </Text>
               </View>
               <UpdateStatusBadge
