@@ -1,19 +1,11 @@
-import { type FC, type ReactNode } from 'react';
+import { type FC } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { useOrdersStore } from '@/entities/order';
-import { useAppUpdates } from '@/features/app-updates';
+import { UpdateStatusBadge, UpdateStatusHint, useAppUpdates } from '@/features/app-updates';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { formatDateTime } from '@/shared/lib/date';
-import {
-  Badge,
-  Button,
-  DiagnosticCard,
-  DiagnosticRow,
-  IconSymbol,
-  Screen,
-  Text,
-} from '@/shared/ui';
+import { Button, DiagnosticCard, DiagnosticRow, IconSymbol, Screen, Text } from '@/shared/ui';
 
 // Экран «Настройки»: живая диагностика доставки (EAS Build/Update) через useAppUpdates и управление
 // локальными данными. Нативный expo-updates инкапсулирован в хуке — страница его не импортирует.
@@ -25,7 +17,6 @@ export const SettingsPage: FC = () => {
   const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
     useAppUpdates();
 
-  // Подтверждение деструктивной очистки → экшен стора (ошибку логирует стор/сервис).
   const handleClearDatabase = () => {
     Alert.alert(
       'Очистить локальную БД?',
@@ -42,32 +33,6 @@ export const SettingsPage: FC = () => {
       ],
     );
   };
-
-  // Бейдж статуса обновления: dev-недоступность приоритетнее наличия обновления.
-  let updateBadge: ReactNode;
-  if (!isUpdatesEnabled) {
-    updateBadge = <Badge variant="neutral">Недоступно в dev</Badge>;
-  } else if (diagnostics.isUpdateAvailable) {
-    updateBadge = <Badge variant="warning">Доступно обновление</Badge>;
-  } else {
-    updateBadge = <Badge variant="success">Актуально</Badge>;
-  }
-
-  // Пояснение под кнопками: ошибка (включая offline) приоритетнее подсказки про dev.
-  let updateHint: ReactNode = null;
-  if (errorMessage) {
-    updateHint = (
-      <Text size="13" color="danger">
-        {errorMessage}
-      </Text>
-    );
-  } else if (!isUpdatesEnabled) {
-    updateHint = (
-      <Text size="13" color="textSecondary">
-        OTA-обновления работают только в сборке EAS, не в режиме разработки.
-      </Text>
-    );
-  }
 
   return (
     <Screen scrollable>
@@ -114,7 +79,10 @@ export const SettingsPage: FC = () => {
                     : 'Ещё не проверялось'}
                 </Text>
               </View>
-              {updateBadge}
+              <UpdateStatusBadge
+                isEnabled={isUpdatesEnabled}
+                isUpdateAvailable={diagnostics.isUpdateAvailable}
+              />
             </View>
             <Button
               title="Проверить обновления"
@@ -131,7 +99,7 @@ export const SettingsPage: FC = () => {
               onPress={reloadApp}
               leftIcon={<IconSymbol name="arrow.clockwise" size={18} color={colors.textPrimary} />}
             />
-            {updateHint}
+            <UpdateStatusHint isEnabled={isUpdatesEnabled} errorMessage={errorMessage} />
           </View>
         </DiagnosticCard>
 
