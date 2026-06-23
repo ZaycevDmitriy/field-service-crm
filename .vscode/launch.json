@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // Отладка development build (expo-dev-client) с движком Hermes.
+    // Порядок: 1) npm start (expo start --dev-client); 2) открыть dev-build на симуляторе/устройстве;
+    // 3) запустить эту конфигурацию — расширение подключится к запущенному Hermes.
+    {
+      "name": "Attach to Hermes (Expo dev-client)",
+      "request": "attach",
+      "type": "reactnativedirect",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
