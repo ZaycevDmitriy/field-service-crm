@@ -1,0 +1,32 @@
+# Quality-CI на каждый PR и push в main. Тяжёлая Android-сборка — отдельно в release-android.yml (по тегу).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Новый push в ту же ветку/PR отменяет предыдущий незавершённый прогон.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    uses: ./.github/workflows/quality.yml
+
+  actionlint:
+    name: Lint workflows (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Бинарь actionlint и его версия запинены детерминированно (скрипт по тегу + версия аргументом).
+      # actionlint сам прогоняет shellcheck по всем `run:`-блокам (shellcheck предустановлен на ubuntu-latest).
+      - name: Run actionlint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash -o download-actionlint.bash
+          bash download-actionlint.bash 1.7.12
+          ./actionlint -color

@@ -1,0 +1,36 @@
+# Переиспользуемый quality-гейт: lint + typecheck + format:check + test.
+# Вызывается из ci.yml (PR/push) и release-android.yml (тег) через `uses:`.
+name: Quality
+
+on:
+  workflow_call:
+
+jobs:
+  quality:
+    name: Lint, typecheck, format, test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Раздельные шаги — статус каждого гейта виден отдельно в Actions UI.
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Format check (Prettier)
+        run: npm run format:check
+
+      - name: Test (jest-expo)
+        run: npm test

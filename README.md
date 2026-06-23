@@ -1,5 +1,7 @@
 # Onsite
 
+[![CI](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/ci.yml)
+
 **English** · [Русский](README.ru.md)
 
 Onsite is a mobile mini-CRM for on-site field-service technicians (router installs, line
