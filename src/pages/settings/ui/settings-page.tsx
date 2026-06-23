@@ -1,5 +1,6 @@
 import { type FC } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
 import { UpdateStatusBadge, UpdateStatusHint, useAppUpdates } from '@/features/app-updates';
@@ -11,7 +12,7 @@ import { Button, DiagnosticCard, DiagnosticRow, IconSymbol, Screen, Text } from 
 // локальными данными. Нативный expo-updates инкапсулирован в хуке — страница его не импортирует.
 export const SettingsPage: FC = () => {
   const colors = useColors();
-  // Селективная выборка: ререндер только при изменении счётчика/референса экшена.
+  const insets = useSafeAreaInsets();
   const ordersCount = useOrdersStore((state) => state.orders.length);
   const clearDatabase = useOrdersStore((state) => state.clearDatabase);
   const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
@@ -35,12 +36,21 @@ export const SettingsPage: FC = () => {
   };
 
   return (
-    <Screen scrollable>
-      <View style={styles.content}>
+    <Screen scrollable={false}>
+      <View style={styles.header}>
         <Text size="xl" weight="bold">
           Настройки
         </Text>
+      </View>
 
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom, Spacing.md) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <DiagnosticCard title="Профиль">
           <View style={styles.profile}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -127,13 +137,20 @@ export const SettingsPage: FC = () => {
             />
           </View>
         </DiagnosticCard>
-      </View>
+      </ScrollView>
     </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  content: {
+  header: {
+    gap: Spacing.md,
+    paddingBottom: Spacing.md,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     gap: Spacing.md,
   },
   profile: {
