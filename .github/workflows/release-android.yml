@@ -56,6 +56,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
+      # KSP (:expo-updates:kspReleaseKotlin) исчерпывает дефолтный Metaspace из шаблона prebuild
+      # на раннере → OutOfMemoryError: Metaspace. Поднимаем лимиты Gradle- и Kotlin-демонов.
+      # Дубль ключа в .properties → java.util.Properties берёт последнее значение (наше).
+      - name: Bump Gradle/Kotlin memory (KSP Metaspace)
+        run: |
+          {
+            echo ""
+            echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=2048m -Dfile.encoding=UTF-8"
+            echo "kotlin.daemon.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=1024m"
+          } >> android/gradle.properties
+
       - name: Build release APK (assembleRelease)
         working-directory: android
         run: ./gradlew assembleRelease
