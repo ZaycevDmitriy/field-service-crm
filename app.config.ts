@@ -12,11 +12,20 @@ import { type ConfigContext, type ExpoConfig } from 'expo/config';
 // `extra.buildProfile` читает built-in env `EAS_BUILD_PROFILE` (доступен только в EAS Build,
 // не при локальной оценке конфига) → локально null, экран настроек падает на авторитетный
 // `Updates.channel` (см. features/app-updates).
+
+// Проводка версии и канала OTA для релиза по «Пути A» (Gradle на раннере, без EAS Build).
+// semantic-release в exec-шаге (`.releaserc.json`) выставляет эти env перед `expo prebuild`; локально
+// и в EAS-сборках переменных нет → берутся дефолты и прежнее поведение (канал в EAS-сборках задаёт
+// профиль в `eas.json`, поэтому `expo-channel-name` инжектится только когда переменная задана).
+const appVersion = process.env.ONSITE_VERSION || '1.0.0';
+const androidVersionCode = Number(process.env.ONSITE_VERSION_CODE) || 1;
+const otaChannel = process.env.ONSITE_UPDATE_CHANNEL;
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'Onsite',
   slug: 'onsite',
-  version: '0.0.1',
+  version: appVersion,
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'onsite',
@@ -26,6 +35,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   updates: {
     url: 'https://u.expo.dev/1af6a2a8-4892-4d9a-961a-1792ae2a8277',
+    // Канал OTA зашивается в нативный билд «Пути A» (для EAS-сборок канал задаёт `eas.json`).
+    ...(otaChannel ? { requestHeaders: { 'expo-channel-name': otaChannel } } : {}),
   },
   ios: {
     supportsTablet: true,
@@ -43,6 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       monochromeImage: './assets/images/android-icon-monochrome.png',
     },
     predictiveBackGestureEnabled: false,
+    versionCode: androidVersionCode,
   },
   web: {
     output: 'static',
