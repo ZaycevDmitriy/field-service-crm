@@ -1,0 +1,10 @@
+# Исключения для @expo/fingerprint (политика runtimeVersion: fingerprint).
+# Паттерны в стиле .gitignore (minimatch), пути относительно корня проекта.
+
+# Нативные каталоги CNG генерируются prebuild и в git не хранятся (см. .gitignore). Считаем fingerprint
+# по чистому JS/конфиг-слою, чтобы значение совпадало до и после prebuild и между APK-сборкой и `eas update`.
+android/**/*
+ios/**/*
+
+# Артефакты релиза (APK + сайдкар-fingerprint) не должны влиять на сам отпечаток.
+dist/**/*
