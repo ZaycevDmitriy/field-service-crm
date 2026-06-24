@@ -173,7 +173,7 @@ Profiles are defined in [`eas.json`](eas.json):
 |---------|---------|--------------|---------|
 | `development` | dev client with Metro | internal | development |
 | `preview` | internal demo without Metro (release JS) | internal | preview |
-| `production` | store build, auto-incremented version | store | production |
+| `production` | store build (version from the release pipeline) | store | production |
 
 ```bash
 eas build --profile development --platform android
@@ -214,6 +214,35 @@ OTA is disabled in development mode — the screen shows "Unavailable in dev" an
 fingerprint of the native layer (`@expo/fingerprint`) and stamps both the build and the update with
 it. An update whose fingerprint is incompatible (the native layer changed) will not apply to an old
 binary — that is the automatic native-vs-JS boundary.
+
+## Releases
+
+Versioning and release notes are automated with [semantic-release](https://semantic-release.gitbook.io/)
+from [Conventional Commits](https://www.conventionalcommits.org/): the version is an *output* derived
+from the commits since the last release, not set by hand.
+
+Releasing is a manual gate — open a pull request from `main` into the `release` branch. Merging it runs
+the [release pipeline](.github/workflows/release-android.yml) on GitHub Actions, which:
+
+1. runs the quality gate (lint, typecheck, format, tests),
+2. computes the next version from the commit history,
+3. builds the Android APK on the runner (native Gradle, no EAS credentials) stamped with that version,
+4. publishes a [GitHub Release](../../releases) with the APK and its `runtimeVersion` fingerprint,
+5. updates [`CHANGELOG.md`](CHANGELOG.md) and back-merges `release` into `main`.
+
+Commit types drive the bump: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` or a `BREAKING CHANGE:`
+footer → major; `chore:` / `docs:` / `ci:` do not trigger a release. Commit messages use an English type
+with a Russian description.
+
+### Delivery channels
+
+| What changed | How it ships |
+|--------------|--------------|
+| Native code or packages (SDK, permissions, native modules, icons) | A new **APK release** via the pipeline above |
+| Only JS / TS and assets | An **EAS Update** (OTA) on the `production` channel |
+
+OTA is gated by the `fingerprint` runtime version, so a JS update only lands on a build whose native
+fingerprint matches (see [EAS Update Demo](#eas-update-demo)).
 
 ## Design Source
 
@@ -258,7 +287,6 @@ Documented but intentionally not implemented in the MVP:
 - Push notifications (require a backend and credentials)
 - A full in-app map screen
 - A manual in-app theme switch (light / dark / system)
-- CI (GitHub Actions) running lint, typecheck and tests
 
 ## License
 
