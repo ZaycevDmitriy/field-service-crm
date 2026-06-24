@@ -84,7 +84,9 @@ jobs:
 
       # Канал production маппится на ветку production (см. eas channel:list). Сообщение берём из коммита
       # через env (без подстановки в команду — защита от инъекции), с фолбэком для ручного запуска.
+      # --platform android: релиз «Пути A» — Android APK; web-бандл (expo-sqlite wasm) для OTA не нужен
+      # и не собирается. --non-interactive eas update не поддерживает (CI=true на раннере уже неинтерактив).
       - name: Publish OTA update (branch production)
         env:
           MSG: ${{ github.event.head_commit.message }}
-        run: eas update --branch production --message "${MSG:-Manual OTA dispatch ($GITHUB_SHA)}" --non-interactive
+        run: eas update --branch production --platform android --message "${MSG:-Manual OTA dispatch ($GITHUB_SHA)}"
