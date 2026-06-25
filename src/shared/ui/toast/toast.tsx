@@ -1,5 +1,5 @@
 import { useEffect, type ComponentProps, type FC } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -67,11 +67,20 @@ export const Toast: FC<IToastProps> = ({ message, variant = 'info', onDismiss })
   return (
     <Animated.View style={animatedStyle}>
       <Pressable
-        style={[styles.toast, Shadows.card, { backgroundColor: colors[surface] }]}
+        style={[styles.toast, Shadows.card, { backgroundColor: colors.surface }]}
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel={message}
       >
+        {/* Тинт варианта поверх сплошного surface: в тёмной теме surface-токены полупрозрачные (rgba),
+            поэтому без подложки оверлей просвечивал бы контент под собой. */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: colors[surface], borderRadius: Radius.md },
+          ]}
+          pointerEvents="none"
+        />
         <IconSymbol name={icon} size={20} color={colors[accent]} />
         <Text size="sm" weight="medium" color={accent} style={styles.message}>
           {message}
