@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.0.0...v1.1.0) (2026-06-25)
+
+### Features
+
+* новые иконка приложения и splash-screen ([ae191a7](https://github.com/ZaycevDmitriy/field-service-crm/commit/ae191a752ef64cb61024814b9f5464d723ce933a)), closes [#E6F4FE](https://github.com/ZaycevDmitriy/field-service-crm/issues/E6F4FE)
+
 ## 1.0.0 (2026-06-24)
 
 ### Features
