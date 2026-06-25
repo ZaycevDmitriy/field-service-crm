@@ -1,5 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 
+import { logger } from '@/shared/lib/logger';
+
 /**
  * Запрашивает разрешение на доступ к медиабиблиотеке (галерее).
  *
@@ -13,13 +15,13 @@ import * as ImagePicker from 'expo-image-picker';
 export async function requestMediaLibraryPermissionAsync(): Promise<boolean> {
   try {
     const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    console.info(
+    logger.info(
       `[photoPermissionService.requestMediaLibrary] Статус разрешения галереи: ${result.status}.`,
     );
 
     return result.granted;
   } catch (error) {
-    console.error(
+    logger.error(
       '[photoPermissionService.requestMediaLibrary] Не удалось запросить разрешение галереи.',
       error,
     );

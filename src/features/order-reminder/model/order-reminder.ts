@@ -1,6 +1,7 @@
 import { Alert, Linking, type AlertButton } from 'react-native';
 
 import type { IServiceOrder } from '@/entities/order';
+import { logger } from '@/shared/lib/logger';
 import {
   requestPermission,
   scheduleOrderReminder,
@@ -36,10 +37,10 @@ async function scheduleWithPermission(
   order: IServiceOrder,
   offset: IReminderOffset,
 ): Promise<void> {
-  console.debug(`[promptOrderReminder] Выбран офсет «${offset.label}» (${offset.seconds} c).`);
+  logger.debug(`[promptOrderReminder] Выбран офсет «${offset.label}» (${offset.seconds} c).`);
   const granted = await requestPermission();
   if (!granted) {
-    console.warn('[promptOrderReminder] Разрешение не выдано — предлагаем открыть настройки.');
+    logger.warn('[promptOrderReminder] Разрешение не выдано — предлагаем открыть настройки.');
     Alert.alert(
       'Уведомления отключены',
       'Чтобы получать напоминания по заявке, включите уведомления в настройках.',
@@ -49,7 +50,7 @@ async function scheduleWithPermission(
           text: 'Открыть настройки',
           onPress: () => {
             Linking.openSettings().catch((error) => {
-              console.error('[promptOrderReminder] Не удалось открыть настройки.', error);
+              logger.error('[promptOrderReminder] Не удалось открыть настройки.', error);
             });
           },
         },

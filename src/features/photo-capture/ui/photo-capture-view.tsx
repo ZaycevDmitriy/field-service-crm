@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { photoService } from '../lib/photoService';
 
 import { Radius, Spacing } from '@/shared/config';
+import { logger } from '@/shared/lib/logger';
 import { Button, IconButton, IconSymbol, Text } from '@/shared/ui';
 
 export interface IPhotoCaptureViewProps {
@@ -67,7 +68,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
 
   useEffect(() => {
     if (permission && !permission.granted) {
-      console.warn('[PhotoCaptureView] Доступ к камере не предоставлен.');
+      logger.warn('[PhotoCaptureView] Доступ к камере не предоставлен.');
     }
   }, [permission]);
 
@@ -205,7 +206,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
         mode="picture"
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(event) => {
-          console.error('[PhotoCaptureView] Камера не запустилась.', event.message);
+          logger.error('[PhotoCaptureView] Камера не запустилась.', event.message);
         }}
       />
 

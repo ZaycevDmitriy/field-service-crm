@@ -1,5 +1,7 @@
 import * as Location from 'expo-location';
 
+import { logger } from '@/shared/lib/logger';
+
 // Координаты работника, возвращаемые сервисом (project-agnostic; структурно совместимо с
 // `app-store.ICurrentLocation`).
 export interface ICoords {
@@ -15,16 +17,16 @@ export const locationService = {
   async requestForegroundPermission(): Promise<boolean> {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      console.info(`[locationService.requestForegroundPermission] Статус разрешения: ${status}.`);
+      logger.info(`[locationService.requestForegroundPermission] Статус разрешения: ${status}.`);
       if (status !== Location.PermissionStatus.GRANTED) {
-        console.warn(
+        logger.warn(
           '[locationService.requestForegroundPermission] Доступ к локации не предоставлен.',
         );
       }
 
       return status === Location.PermissionStatus.GRANTED;
     } catch (error) {
-      console.error(
+      logger.error(
         '[locationService.requestForegroundPermission] Не удалось запросить разрешение.',
         error,
       );
@@ -41,11 +43,11 @@ export const locationService = {
         accuracy: Location.Accuracy.Balanced,
       });
       const { latitude, longitude } = position.coords;
-      console.debug(`[locationService.getCurrentCoords] Координаты: ${latitude}, ${longitude}.`);
+      logger.debug(`[locationService.getCurrentCoords] Координаты: ${latitude}, ${longitude}.`);
 
       return { latitude, longitude };
     } catch (error) {
-      console.error('[locationService.getCurrentCoords] Не удалось получить координаты.', error);
+      logger.error('[locationService.getCurrentCoords] Не удалось получить координаты.', error);
 
       return null;
     }
