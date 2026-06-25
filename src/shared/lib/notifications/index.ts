@@ -4,6 +4,8 @@
 // ⚠️ barrel @/shared/lib отсутствует — импортировать строго через @/shared/lib/notifications.
 export {
   configureNotifications,
+  mapPermissionStatus,
+  PermissionResultEnum,
   requestPermission,
   scheduleOrderReminder,
   type IReminderContent,

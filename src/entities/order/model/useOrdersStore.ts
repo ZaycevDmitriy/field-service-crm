@@ -9,6 +9,7 @@ import type { IServiceOrder, IServiceOrderPhoto } from './types';
 
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
+import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
 // счётчики, ближайшая заявка) считается чистыми функциями в компонентах, а не здесь.
@@ -52,6 +53,7 @@ const persistStatus = (orderId: string, status: ServiceOrderStatusEnum, action: 
   // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
   orderDatabaseService.updateOrderStatus(orderId, status).catch((error) => {
     logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+    useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
   });
 };
 
@@ -180,6 +182,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
     orderDatabaseService.addOrderPhoto(orderId, photo).catch((error) => {
       logger.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Фото не сохранено');
     });
   },
 
