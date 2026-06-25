@@ -45,6 +45,8 @@ const MAPPING = {
   'arrow.triangle.2.circlepath.camera.fill': 'flip-camera-ios',
   'photo.on.rectangle': 'photo-library',
   'bell.fill': 'notifications',
+  'checkmark.circle.fill': 'check-circle',
+  'info.circle.fill': 'info',
 } satisfies Partial<IconMapping>;
 
 /**
