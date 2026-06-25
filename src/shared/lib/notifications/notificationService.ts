@@ -27,11 +27,12 @@ Notifications.setNotificationHandler({
 
 /**
  * Создаёт Android-канал «order-reminders» (idempotent: setNotificationChannelAsync создаёт или
- * обновляет). На iOS каналов нет — no-op. Вызывать при старте, до первого планирования.
+ * обновляет). На iOS каналов нет — no-op. Вызывать при старте, до первого планирования. Возвращает
+ * true при успехе (и на iOS, где канал не нужен), false — при сбое создания канала.
  */
-export async function configureNotifications(): Promise<void> {
+export async function configureNotifications(): Promise<boolean> {
   if (Platform.OS !== 'android') {
-    return;
+    return true;
   }
 
   try {
@@ -40,17 +41,36 @@ export async function configureNotifications(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
     });
     logger.info('[notificationService.configureNotifications] Канал order-reminders готов.');
+
+    return true;
   } catch (error) {
     logger.error('[notificationService.configureNotifications] Не удалось создать канал.', error);
+
+    return false;
   }
 }
 
+// Результат запроса разрешения на уведомления: выдано / отказано / сбой запроса. const-object + тип
+// вместо TS enum (PDR §6). Разделяет «отказ» (вести в настройки) и «сбой» (показать ошибку).
+export const PermissionResultEnum = {
+  Granted: 'granted',
+  Denied: 'denied',
+  Error: 'error',
+} as const;
+export type PermissionResultEnum = (typeof PermissionResultEnum)[keyof typeof PermissionResultEnum];
+
+// Чистый маппинг статуса разрешения expo в доменный результат (Granted/Denied). Сбой запроса (Error)
+// сюда не доходит — он обрабатывается в catch requestPermission. Вынесен отдельно для юнит-теста.
+export function mapPermissionStatus(status: Notifications.PermissionStatus): PermissionResultEnum {
+  return status === 'granted' ? PermissionResultEnum.Granted : PermissionResultEnum.Denied;
+}
+
 /**
- * Запрашивает разрешение на уведомления (graceful): true — granted, иначе false (denied/сбой). Сначала
- * читает текущий статус и запрашивает только если ещё не granted. На Android 13+ это же вызывает
- * системный запрос POST_NOTIFICATIONS.
+ * Запрашивает разрешение на уведомления (graceful): Granted — выдано, Denied — отказано, Error — сбой
+ * запроса. Сначала читает текущий статус и запрашивает только если ещё не granted. На Android 13+ это
+ * же вызывает системный запрос POST_NOTIFICATIONS.
  */
-export async function requestPermission(): Promise<boolean> {
+export async function requestPermission(): Promise<PermissionResultEnum> {
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -58,18 +78,21 @@ export async function requestPermission(): Promise<boolean> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    logger.info(`[notificationService.requestPermission] Статус разрешения: ${finalStatus}.`);
-    if (finalStatus !== 'granted') {
+    const result = mapPermissionStatus(finalStatus);
+    logger.info(
+      `[notificationService.requestPermission] Статус разрешения: ${finalStatus} (${result}).`,
+    );
+    if (result !== PermissionResultEnum.Granted) {
       logger.warn(
         '[notificationService.requestPermission] Разрешение на уведомления не предоставлено.',
       );
     }
 
-    return finalStatus === 'granted';
+    return result;
   } catch (error) {
     logger.error('[notificationService.requestPermission] Не удалось запросить разрешение.', error);
 
-    return false;
+    return PermissionResultEnum.Error;
   }
 }
 

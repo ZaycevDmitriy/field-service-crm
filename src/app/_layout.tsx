@@ -9,7 +9,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { useOrdersStore } from '@/entities/order';
 import { Spacing, useColorScheme } from '@/shared/config';
 import { configureNotifications } from '@/shared/lib/notifications';
-import { useToastStore } from '@/shared/model';
+import { ToastVariantEnum, useToastStore } from '@/shared/model';
 import { Toast } from '@/shared/ui';
 
 export const unstable_settings = {
@@ -64,9 +64,14 @@ const RootLayout: FC = () => {
   // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
   useEffect(() => {
     useOrdersStore.getState().initialize();
-    // Создаём Android-канал напоминаний до первого планирования (на iOS — no-op). Module-level
-    // setNotificationHandler уже выставлен самим импортом сегмента notifications.
-    configureNotifications();
+    // Создаём Android-канал напоминаний до первого планирования (на iOS — true сразу). Module-level
+    // setNotificationHandler уже выставлен самим импортом сегмента notifications. При сбое канала —
+    // мягкое уведомление пользователю (напоминания могут не работать), приложение продолжает работать.
+    configureNotifications().then((ready) => {
+      if (!ready) {
+        useToastStore.getState().showToast(ToastVariantEnum.Info, 'Уведомления могут не работать');
+      }
+    });
   }, []);
 
   return (

@@ -1,7 +1,7 @@
 import { Linking, Platform } from 'react-native';
 
 import { logger } from '@/shared/lib/logger';
-import { useAppStore } from '@/shared/model';
+import { ToastVariantEnum, useAppStore, useToastStore } from '@/shared/model';
 
 // Точка назначения маршрута — координаты адреса заявки (минимальный контракт, без связи с entity).
 export interface IRouteDestination {
@@ -52,6 +52,7 @@ export async function openMapsRoute(destination: IRouteDestination): Promise<voi
       await Linking.openURL(webUrl);
     } catch (webError) {
       logger.error('[openMapsRoute] Не удалось открыть карты.', webError);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось открыть карты');
     }
   }
 }
