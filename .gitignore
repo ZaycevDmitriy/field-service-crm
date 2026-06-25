@@ -61,6 +61,7 @@ docs/
 
 # ai
 .claude/
+.agents/
 .mcp.json
 CLAUDE.md
 .codex/
