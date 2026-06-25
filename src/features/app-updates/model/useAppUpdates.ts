@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import {
   checkForUpdate as runUpdateCheck,
+  isOtaEnabled,
   reloadApp as runReloadApp,
   UpdateOutcomeEnum,
 } from '../lib/updateService';
@@ -117,7 +118,7 @@ export function useAppUpdates(): IUseAppUpdates {
 
   return {
     diagnostics,
-    isUpdatesEnabled: Updates.isEnabled,
+    isUpdatesEnabled: isOtaEnabled,
     isChecking: isBusy || nativeChecking || isDownloading,
     errorMessage,
     checkForUpdate,
