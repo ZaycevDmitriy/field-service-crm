@@ -124,7 +124,9 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
     if (permission?.canAskAgain) {
       requestPermission();
     } else {
-      Linking.openSettings();
+      Linking.openSettings().catch((error) => {
+        logger.warn('[PhotoCaptureView] Не удалось открыть настройки.', error);
+      });
     }
   };
 
