@@ -1,5 +1,5 @@
 # Переиспользуемый quality-гейт: lint + typecheck + format:check + test.
-# Вызывается из ci.yml (PR/push) и release-android.yml (тег) через `uses:`.
+# Вызывается из ci.yml (PR + push develop) и release.yml (push main) через `uses:`.
 name: Quality
 
 on:
