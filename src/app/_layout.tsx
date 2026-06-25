@@ -1,9 +1,9 @@
 import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
-import { type FC, useEffect } from 'react';
-import 'react-native-reanimated';
+import { type FC, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
@@ -26,18 +26,30 @@ const Toaster: FC = () => {
   const insets = useSafeAreaInsets();
   const toasts = useToastStore((state) => state.toasts);
   const dismissToast = useToastStore((state) => state.dismissToast);
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    if (toasts.length === 0) {
-      return;
-    }
-    // На каждый видимый тост — таймер авто-закрытия; при смене списка/размонтировании снимаем все.
-    const timers = toasts.map((toast) =>
-      setTimeout(() => dismissToast(toast.id), TOAST_DURATION_MS),
-    );
-
-    return () => timers.forEach(clearTimeout);
+    const visible = new Set(toasts.map((toast) => toast.id));
+    // Новым тостам — таймер авто-закрытия; существующим отсчёт не сбрасываем.
+    toasts.forEach((toast) => {
+      if (!timers.current.has(toast.id)) {
+        timers.current.set(
+          toast.id,
+          setTimeout(() => dismissToast(toast.id), TOAST_DURATION_MS),
+        );
+      }
+    });
+    // Исчезнувшим тостам (закрыты тапом / вытеснены FIFO) — снять таймер.
+    timers.current.forEach((timer, id) => {
+      if (!visible.has(id)) {
+        clearTimeout(timer);
+        timers.current.delete(id);
+      }
+    });
   }, [toasts, dismissToast]);
+
+  // Снять все таймеры при размонтировании контейнера.
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   if (toasts.length === 0) {
     return null;
