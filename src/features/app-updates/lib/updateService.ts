@@ -1,12 +1,7 @@
 import * as Updates from 'expo-updates';
 
-// Префикс логов вынесен в константу (одно вхождение литерала — иначе sonarjs/no-duplicate-string).
 const LOG_TAG = '[updateService]';
 
-// `Updates.isEnabled` отражает только конфигурацию сборки (URL + runtimeVersion присутствуют), но НЕ
-// режим разработки: в dev-клиенте expo-updates сконфигурирован, поэтому флаг === true, хотя JS грузится
-// из Metro и async-методы expo-updates в dev отклоняются. Реальная доступность OTA — флаг конфигурации
-// И не dev-сборка (`__DEV__`). Единая точка истины для бейджа статуса и guard'ов проверки/перезагрузки.
 export const isOtaEnabled = Updates.isEnabled && !__DEV__;
 
 // [FIX] Разовый лог при загрузке модуля — видно, почему бейдж в dev показывает «Недоступно в dev».
