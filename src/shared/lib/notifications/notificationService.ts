@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { logger } from '@/shared/lib/logger';
+
 // Минимальный контракт контента напоминания. Business-agnostic: сегмент shared не знает про entity
 // order — маппинг IServiceOrder → IReminderContent живёт выше, в features/order-reminder.
 export interface IReminderContent {
@@ -37,9 +39,9 @@ export async function configureNotifications(): Promise<void> {
       name: 'Напоминания по заявкам',
       importance: Notifications.AndroidImportance.HIGH,
     });
-    console.info('[notificationService.configureNotifications] Канал order-reminders готов.');
+    logger.info('[notificationService.configureNotifications] Канал order-reminders готов.');
   } catch (error) {
-    console.error('[notificationService.configureNotifications] Не удалось создать канал.', error);
+    logger.error('[notificationService.configureNotifications] Не удалось создать канал.', error);
   }
 }
 
@@ -56,19 +58,16 @@ export async function requestPermission(): Promise<boolean> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    console.info(`[notificationService.requestPermission] Статус разрешения: ${finalStatus}.`);
+    logger.info(`[notificationService.requestPermission] Статус разрешения: ${finalStatus}.`);
     if (finalStatus !== 'granted') {
-      console.warn(
+      logger.warn(
         '[notificationService.requestPermission] Разрешение на уведомления не предоставлено.',
       );
     }
 
     return finalStatus === 'granted';
   } catch (error) {
-    console.error(
-      '[notificationService.requestPermission] Не удалось запросить разрешение.',
-      error,
-    );
+    logger.error('[notificationService.requestPermission] Не удалось запросить разрешение.', error);
 
     return false;
   }
@@ -95,13 +94,13 @@ export async function scheduleOrderReminder(
         channelId: ORDER_REMINDERS_CHANNEL_ID,
       },
     });
-    console.info(
+    logger.info(
       `[notificationService.scheduleOrderReminder] Напоминание ${id} запланировано через ${seconds} c.`,
     );
 
     return id;
   } catch (error) {
-    console.error('[notificationService.scheduleOrderReminder] Не удалось запланировать.', error);
+    logger.error('[notificationService.scheduleOrderReminder] Не удалось запланировать.', error);
 
     return null;
   }

@@ -1,5 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
+import { logger } from '@/shared/lib/logger';
+
 // Имя файла локальной SQLite-БД. Открывается лениво при первом обращении.
 const DATABASE_NAME = 'onsite.db';
 
@@ -18,14 +20,14 @@ export const getDatabase = async (): Promise<SQLite.SQLiteDatabase> => {
   if (!databasePromise) {
     databasePromise = SQLite.openDatabaseAsync(DATABASE_NAME)
       .then((database) => {
-        console.info('[db.getDatabase] Соединение с локальной БД открыто.');
+        logger.info('[db.getDatabase] Соединение с локальной БД открыто.');
 
         return database;
       })
       .catch((error) => {
         // Сбрасываем кэш, чтобы следующий вызов попытался открыть соединение заново.
         databasePromise = null;
-        console.error('[db.getDatabase] Не удалось открыть соединение с БД.', error);
+        logger.error('[db.getDatabase] Не удалось открыть соединение с БД.', error);
         throw error;
       });
   }

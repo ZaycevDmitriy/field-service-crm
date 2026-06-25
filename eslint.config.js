@@ -108,10 +108,22 @@ module.exports = defineConfig([
 
       'react/jsx-no-target-blank': 'warn',
 
+      // Запрет любых console.* в коде приложения: вся диагностика — через @/shared/lib/logger
+      // (dev-gated, без LogBox-плашки). Исключение — сам модуль логгера (override ниже).
+      'no-console': 'error',
+
       'sonarjs/no-duplicate-string': [
         'error',
         { ignoreStrings: 'lower-case,text/plain,Content-Type,space-between,flex-start,flex-end' },
       ],
+    },
+  },
+
+  // Единственное санкционированное место console.* — модуль логгера (обёртка над console).
+  {
+    files: ['src/shared/lib/logger/**/*.{ts,tsx}'],
+    rules: {
+      'no-console': 'off',
     },
   },
 
