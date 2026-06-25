@@ -49,17 +49,19 @@ const MAPPING = {
   'info.circle.fill': 'info',
 } satisfies Partial<IconMapping>;
 
-/**
- * Иконка: нативные SF Symbols на iOS, Material Icons на Android и web.
- * Обеспечивает единообразный вид на платформах и оптимальный расход ресурсов.
- * Имена `name` основаны на SF Symbols и требуют ручного маппинга на Material Icons.
- */
-export const IconSymbol: FC<{
+interface IIconSymbolProps {
   name: IconSymbolName;
   size?: number;
   color: string | OpaqueColorValue;
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
-}> = ({ name, size = 24, color, style }) => {
+}
+
+/**
+ * Иконка: нативные SF Symbols на iOS, Material Icons на Android и web.
+ * Обеспечивает единообразный вид на платформах и оптимальный расход ресурсов.
+ * Имена `name` основаны на SF Symbols и требуют ручного маппинга на Material Icons.
+ */
+export const IconSymbol: FC<IIconSymbolProps> = ({ name, size = 24, color, style }) => {
   return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
 };
