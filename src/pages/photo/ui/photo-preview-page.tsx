@@ -21,7 +21,7 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
   const navigation = useNavigation();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addOrderPhoto } = useOrdersStore();
+  const addOrderPhoto = useOrdersStore((state) => state.addOrderPhoto);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', () => {
