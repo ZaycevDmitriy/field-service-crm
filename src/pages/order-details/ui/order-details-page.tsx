@@ -28,7 +28,7 @@ const InfoTile: FC<{ icon: IconName }> = ({ icon }) => {
 
   return (
     <View style={[styles.tile, { backgroundColor: colors.surfaceMuted }]}>
-      <IconSymbol name={icon} size={18} color={colors.primary} />
+      <IconSymbol name={icon} size={18} color={colors.accent} />
     </View>
   );
 };
@@ -198,7 +198,7 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
                 leftIcon={<IconSymbol name="checkmark" size={18} color={colors.white} />}
               />
               <Pressable onPress={cancelOrder} accessibilityRole="button" style={styles.cancelLink}>
-                <Text size="md" weight="semibold" color="danger">
+                <Text size="md" weight="semibold" color="dangerAccent">
                   Отменить заявку
                 </Text>
               </Pressable>

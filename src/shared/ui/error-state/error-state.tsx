@@ -30,7 +30,7 @@ export const ErrorState: FC<IErrorStateProps> = ({
   return (
     <View style={styles.container}>
       <View style={[styles.iconTile, { backgroundColor: colors.dangerSurface }]}>
-        <IconSymbol name={icon} size={26} color={colors.danger} />
+        <IconSymbol name={icon} size={26} color={colors.dangerAccent} />
       </View>
       <Text size="17" weight="semibold" style={styles.center}>
         {title}

@@ -5,7 +5,7 @@ import { FontSize, Radius, Spacing, useColors } from '@/shared/config';
 
 export type IInputProps = TextInputProps;
 
-// Текстовое поле с focus-состоянием: рамка border → primary при фокусе.
+// Текстовое поле с focus-состоянием: рамка border → accent при фокусе (on-surface, ≥4.5).
 export const Input: FC<IInputProps> = ({ style, onFocus, onBlur, ...rest }) => {
   const colors = useColors();
   const [focused, setFocused] = useState(false);
@@ -18,7 +18,7 @@ export const Input: FC<IInputProps> = ({ style, onFocus, onBlur, ...rest }) => {
         {
           color: colors.textPrimary,
           backgroundColor: colors.surface,
-          borderColor: focused ? colors.primary : colors.border,
+          borderColor: focused ? colors.accent : colors.border,
         },
         style,
       ]}

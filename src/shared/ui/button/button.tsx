@@ -16,6 +16,8 @@ export interface IButtonProps {
   loading?: boolean;
   fullWidth?: boolean;
   leftIcon?: ReactNode;
+  // Явный цвет текста/индикатора для theme-independent поверхностей (напр. экран съёмки) — минует тему.
+  textColor?: string;
   onPress: () => void;
 }
 
@@ -34,6 +36,7 @@ export const Button: FC<IButtonProps> = ({
   loading = false,
   fullWidth = false,
   leftIcon,
+  textColor,
   onPress,
 }) => {
   const colors = useColors();
@@ -53,12 +56,13 @@ export const Button: FC<IButtonProps> = ({
       case 'danger':
         return { background: colors.danger, border: 'transparent', text: 'white' };
       case 'ghost':
-        return { background: 'transparent', border: 'transparent', text: 'primary' };
+        return { background: 'transparent', border: 'transparent', text: 'accent' };
     }
   };
 
-  // Ключ цвета текста: Text резолвит его сам, ActivityIndicator — через палитру.
+  // Ключ цвета текста (резолвится через палитру); textColor — явный override для theme-independent экранов.
   const textColorKey = resolveColors(false).text;
+  const resolvedTextColor = textColor ?? colors[textColorKey];
 
   return (
     <Pressable
@@ -79,11 +83,16 @@ export const Button: FC<IButtonProps> = ({
       }}
     >
       {loading ? (
-        <ActivityIndicator color={colors[textColorKey]} />
+        <ActivityIndicator color={resolvedTextColor} />
       ) : (
         <>
           {leftIcon}
-          <Text weight="semibold" size={size === 'lg' ? '17' : 'md'} color={textColorKey}>
+          <Text
+            weight="semibold"
+            size={size === 'lg' ? '17' : 'md'}
+            color={textColorKey}
+            style={textColor ? { color: textColor } : undefined}
+          >
             {title}
           </Text>
         </>
