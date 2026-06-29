@@ -1,9 +1,13 @@
 import { Image } from 'expo-image';
 import { type FC, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardGestureArea } from 'react-native-keyboard-controller';
 
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, Input, Text } from '@/shared/ui';
+
+// Связывает KeyboardGestureArea с полем комментария (textInputNativeID обязателен на iOS).
+const COMMENT_INPUT_ID = 'photo-comment-input';
 
 export interface IPhotoPreviewProps {
   // Абсолютный URI снятого/выбранного фото для предпросмотра.
@@ -13,53 +17,68 @@ export interface IPhotoPreviewProps {
   onRetake: () => void;
 }
 
-// Предпросмотр снимка: реальное фото растягивается на доступную высоту (contentFit cover),
-// поле комментария и действия «Сохранить»/«Переснять» закреплены снизу (без прокрутки).
-// Комментарий — временное состояние экрана, хранится в local state (PDR §13).
 export const PhotoPreview: FC<IPhotoPreviewProps> = ({ uri, onSave, onRetake }) => {
   const colors = useColors();
   const [comment, setComment] = useState('');
 
   return (
-    <View style={styles.container}>
-      <Image
-        source={{ uri }}
-        contentFit="cover"
-        style={[styles.preview, { backgroundColor: colors.surfaceMuted }]}
-      />
-      <View style={styles.commentBlock}>
-        <Text size="13" weight="semibold" color="textSecondary" style={styles.label}>
-          Комментарий
-        </Text>
-        <Input
-          value={comment}
-          onChangeText={setComment}
-          placeholder="Комментарий к фото"
-          multiline
-          style={styles.input}
+    <KeyboardGestureArea
+      interpolator="ios"
+      textInputNativeID={COMMENT_INPUT_ID}
+      style={styles.gestureArea}
+    >
+      <KeyboardAwareScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="interactive"
+        bottomOffset={170}
+      >
+        <Image
+          source={{ uri }}
+          contentFit="cover"
+          style={[styles.preview, { backgroundColor: colors.surfaceMuted }]}
         />
-      </View>
-      <View style={styles.actions}>
-        <Button
-          title="Сохранить фото"
-          variant="primary"
-          size="lg"
-          fullWidth
-          onPress={() => onSave(comment)}
-        />
-        <Button title="Переснять" variant="secondary" fullWidth onPress={onRetake} />
-      </View>
-    </View>
+        <View style={styles.commentBlock}>
+          <Text size="13" weight="semibold" color="textSecondary" style={styles.label}>
+            Комментарий
+          </Text>
+          <Input
+            nativeID={COMMENT_INPUT_ID}
+            value={comment}
+            onChangeText={setComment}
+            placeholder="Комментарий к фото"
+            multiline
+            style={styles.input}
+          />
+        </View>
+        <View style={styles.actions}>
+          <Button
+            title="Сохранить фото"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onPress={() => onSave(comment)}
+          />
+          <Button title="Переснять" variant="secondary" fullWidth onPress={onRetake} />
+        </View>
+      </KeyboardAwareScrollView>
+    </KeyboardGestureArea>
   );
 };
 
 const styles = StyleSheet.create({
+  gestureArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
+  },
+  content: {
     gap: Spacing.md,
   },
   preview: {
-    flex: 1,
+    height: 320,
     width: '100%',
     borderRadius: Radius.lg,
   },
