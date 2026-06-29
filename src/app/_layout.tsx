@@ -3,6 +3,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-naviga
 import { StatusBar } from 'expo-status-bar';
 import { type FC, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import {
+  AndroidSoftInputModes,
+  KeyboardController,
+  KeyboardProvider,
+} from 'react-native-keyboard-controller';
 import 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +32,8 @@ const Toaster: FC = () => {
   const toasts = useToastStore((state) => state.toasts);
   const dismissToast = useToastStore((state) => state.dismissToast);
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  KeyboardController.setInputMode(AndroidSoftInputModes.SOFT_INPUT_ADJUST_NOTHING);
 
   useEffect(() => {
     const visible = new Set(toasts.map((toast) => toast.id));
@@ -88,18 +95,20 @@ const RootLayout: FC = () => {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="orders/[orderId]" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="camera/[orderId]"
-            options={{ headerShown: false, presentation: 'fullScreenModal' }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
-        <Toaster />
-      </ThemeProvider>
+      <KeyboardProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="orders/[orderId]" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="camera/[orderId]"
+              options={{ headerShown: false, presentation: 'fullScreenModal' }}
+            />
+          </Stack>
+          <StatusBar style="auto" />
+          <Toaster />
+        </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 };
