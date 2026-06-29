@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.1.0...v1.2.0) (2026-06-29)
+
+### Features
+
+* **ci:** OTA-update workflow (eas update) + fingerprint-guard ([#25](https://github.com/ZaycevDmitriy/field-service-crm/issues/25)) ([6a61e50](https://github.com/ZaycevDmitriy/field-service-crm/commit/6a61e50c220f14754f50303aea3d2ec746224471))
+* error-состояние камеры + guard route без orderId ([a54460d](https://github.com/ZaycevDmitriy/field-service-crm/commit/a54460d814f358783767ca038c11eca8080d339c))
+* **photo:** предпросмотр снимка отдельным маршрутом ([eadaff9](https://github.com/ZaycevDmitriy/field-service-crm/commit/eadaff95b684b43f9eb729f1eb3ccf90f2df00b4))
+* Toast-инфраструктура (shared/model + shared/ui + _layout) ([c866f42](https://github.com/ZaycevDmitriy/field-service-crm/commit/c866f4278139b90fd4cbdfe1b48b0e656e1b8faa))
+* новые иконка приложения и splash-screen ([2fcf631](https://github.com/ZaycevDmitriy/field-service-crm/commit/2fcf631da82a723e903d5bb5eb2f3bb2bfc92e62)), closes [#E6F4FE](https://github.com/ZaycevDmitriy/field-service-crm/issues/E6F4FE)
+* показ ошибок persist/уведомлений/карт через Toast ([795f722](https://github.com/ZaycevDmitriy/field-service-crm/commit/795f722126b8071dbbda745bb74d0603567033e8))
+
+### Bug Fixes
+
+* **photo:** подписка на addOrderPhoto через селектор ([631f238](https://github.com/ZaycevDmitriy/field-service-crm/commit/631f238174dd7706066612d5a336ba46e1dcfc71))
+* бейдж OTA-статуса учитывает dev-режим через __DEV__ ([#30](https://github.com/ZaycevDmitriy/field-service-crm/issues/30)) ([be6d849](https://github.com/ZaycevDmitriy/field-service-crm/commit/be6d849dbdbd6252efe13e879ded7635f2c7802b))
+* непрозрачный фон Toast в тёмной теме ([da3d3f4](https://github.com/ZaycevDmitriy/field-service-crm/commit/da3d3f4621a10197e5cea05c7185f406d9ee9dad))
+* обработка отказа Linking.openSettings в экране съёмки ([f8b7c9b](https://github.com/ZaycevDmitriy/field-service-crm/commit/f8b7c9b839f41dfee08f3fdeea3b262fba9fdf39))
+
 ## [1.1.0](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.0.0...v1.1.0) (2026-06-25)
 
 ### Features
