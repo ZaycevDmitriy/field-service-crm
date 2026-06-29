@@ -72,3 +72,6 @@ AGENTS.md
 
 # design handoff (reference-прототипы, не исходники приложения)
 design/
+.impeccable/
+DESIGN.md
+PRODUCT.md
