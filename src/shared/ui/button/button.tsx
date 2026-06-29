@@ -21,10 +21,35 @@ export interface IButtonProps {
   onPress: () => void;
 }
 
-interface IVariantColors {
+export interface IVariantColors {
   background: string;
   border: string;
   text: keyof IColors;
+}
+
+// Цвета фона/границы/текста по варианту; pressed затемняет primary. Чистая функция (вынесена из
+// компонента) — единый источник истины заливки варианта, на котором держится регрессионный тест кнопки.
+export function resolveButtonColors(
+  variant: IButtonVariant,
+  colors: IColors,
+  pressed: boolean,
+): IVariantColors {
+  switch (variant) {
+    case 'primary':
+      return {
+        background: pressed ? colors.primaryPressed : colors.primary,
+        border: 'transparent',
+        text: 'white',
+      };
+    case 'secondary':
+      // Тональный нейтральный филл: surfaceMuted даёт отрыв от surface-карточки, на которой кнопка
+      // живёт (при surface-заливке сливалась с контейнером — граница hairline 1.24:1 невидима).
+      return { background: colors.surfaceMuted, border: colors.border, text: 'textPrimary' };
+    case 'danger':
+      return { background: colors.danger, border: 'transparent', text: 'white' };
+    case 'ghost':
+      return { background: 'transparent', border: 'transparent', text: 'accent' };
+  }
 }
 
 // Кнопка с вариантами primary/secondary/danger/ghost (PDR §9.1).
@@ -42,26 +67,8 @@ export const Button: FC<IButtonProps> = ({
   const colors = useColors();
   const isDisabled = disabled || loading;
 
-  // Цвета фона/границы/текста по варианту; pressed затемняет primary.
-  const resolveColors = (pressed: boolean): IVariantColors => {
-    switch (variant) {
-      case 'primary':
-        return {
-          background: pressed ? colors.primaryPressed : colors.primary,
-          border: 'transparent',
-          text: 'white',
-        };
-      case 'secondary':
-        return { background: colors.surface, border: colors.border, text: 'textPrimary' };
-      case 'danger':
-        return { background: colors.danger, border: 'transparent', text: 'white' };
-      case 'ghost':
-        return { background: 'transparent', border: 'transparent', text: 'accent' };
-    }
-  };
-
   // Ключ цвета текста (резолвится через палитру); textColor — явный override для theme-independent экранов.
-  const textColorKey = resolveColors(false).text;
+  const textColorKey = resolveButtonColors(variant, colors, false).text;
   const resolvedTextColor = textColor ?? colors[textColorKey];
 
   return (
@@ -69,7 +76,7 @@ export const Button: FC<IButtonProps> = ({
       onPress={onPress}
       disabled={isDisabled}
       style={({ pressed }) => {
-        const variantColors = resolveColors(pressed);
+        const variantColors = resolveButtonColors(variant, colors, pressed);
         return [
           styles.button,
           size === 'lg' && styles.buttonLg,

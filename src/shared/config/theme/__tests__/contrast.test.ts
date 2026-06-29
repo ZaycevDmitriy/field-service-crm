@@ -96,6 +96,10 @@ function contrastRatio(fg: string, bg: string, base = '#FFFFFF'): number {
 // Пороги WCAG 2.1 AA: обычный текст ≥4.5, нетекстовые элементы (иконки/границы/рейлы) ≥3.
 const TEXT_MIN = 4.5;
 const NON_TEXT_MIN = 3;
+// Порог «не-слияния»: тональный филл контрола должен оставаться отделим от поверхности-контейнера.
+// Это affordance-guard (контрол не сливается с фоном), а не WCAG-порог — светлый нейтральный филл
+// строгие 3:1 не даёт; ловит регрессию вида surfaceMuted→surface (отрыв схлопывается до 1.0).
+const SEPARATION_MIN = 1.1;
 
 interface IContrastPair {
   label: string;
@@ -189,6 +193,14 @@ function buildPairs(c: IColors, status: IOrderStatusColors): IContrastPair[] {
       bg: c.dangerSurface,
       base: c.surface,
       min: NON_TEXT_MIN,
+    },
+    // secondary-кнопка (button.tsx): тональный филл surfaceMuted обязан оставаться отделим от
+    // surface-карточки, на которой кнопка живёт. Ловит регрессию surface-заливки (слияние 1.0:1).
+    {
+      label: 'secondary btn fill (surfaceMuted) / surface card (non-collapse)',
+      fg: c.surfaceMuted,
+      bg: c.surface,
+      min: SEPARATION_MIN,
     },
     ...statusPairs,
   ];
