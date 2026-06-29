@@ -11,7 +11,7 @@ export interface INearestOrderCardProps {
   onRoute: () => void;
 }
 
-// Hero «Следующая заявка»: radius 18, левый рейл 4px primary, усиленная тень, split-CTA (открыть/маршрут).
+// Hero «Следующая заявка»: radius 18, левый рейл 4px accent, усиленная тень, split-CTA (открыть/маршрут).
 export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, onRoute }) => {
   const colors = useColors();
   // Дистанция — производное от текущей локации; null → сегмент скрыт (локация недоступна).
@@ -19,8 +19,8 @@ export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, on
 
   return (
     <View style={[styles.hero, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {/* Левый рейл 4px primary — декоративная stroke-ширина (вне spacing-шкалы). */}
-      <View style={[styles.rail, { backgroundColor: colors.primary }]} />
+      {/* Левый рейл 4px accent — декоративная stroke-ширина (вне spacing-шкалы), on-surface ≥3. */}
+      <View style={[styles.rail, { backgroundColor: colors.accent }]} />
       <View style={styles.body}>
         <View style={styles.topRow}>
           <View style={styles.timeWrap}>

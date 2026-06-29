@@ -123,7 +123,7 @@ export const SettingsPage: FC = () => {
           <View style={styles.block}>
             <View style={styles.row}>
               <View style={[styles.tile, { backgroundColor: colors.surfaceMuted }]}>
-                <IconSymbol name="externaldrive.fill" size={18} color={colors.primary} />
+                <IconSymbol name="externaldrive.fill" size={18} color={colors.accent} />
               </View>
               <View style={styles.rowText}>
                 <Text size="15" weight="medium">

@@ -49,7 +49,7 @@ export const StatsStrip: FC = () => {
           Сегодня
         </Text>
         <View style={styles.stats}>
-          <Stat color={colors.primary} value={counts.new} label="новых" />
+          <Stat color={colors.accent} value={counts.new} label="новых" />
           <Stat color={colors.warning} value={counts.inProgress} label="в работе" />
           <Stat color={colors.success} value={counts.done} label="готово" />
         </View>
