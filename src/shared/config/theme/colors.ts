@@ -9,11 +9,13 @@ export interface IColors {
   primary: string;
   primaryPressed: string;
   success: string;
+  successSurface: string;
   warning: string;
   warningSurface: string;
   danger: string;
   dangerSurface: string;
   info: string;
+  infoSurface: string;
   black: string;
   white: string;
 }
@@ -30,11 +32,13 @@ export const lightColors = {
   primary: '#2563EB',
   primaryPressed: '#1D4ED8',
   success: '#16A34A',
+  successSurface: '#F0FDF4',
   warning: '#B45309',
   warningSurface: '#FFFBEB',
   danger: '#DC2626',
   dangerSurface: '#FEF2F2',
   info: '#0EA5E9',
+  infoSurface: '#F0F9FF',
   black: '#000000',
   white: '#FFFFFF',
 } as const satisfies IColors;
@@ -51,11 +55,13 @@ export const darkColors = {
   primary: '#5B8DEF',
   primaryPressed: '#4A7BE0',
   success: '#34D399',
+  successSurface: 'rgba(52,211,153,0.18)',
   warning: '#FBBF24',
   warningSurface: 'rgba(251,191,36,0.18)',
   danger: '#F87171',
   dangerSurface: 'rgba(248,113,113,0.18)',
   info: '#60A5FA',
+  infoSurface: 'rgba(96,165,250,0.18)',
   black: '#000000',
   white: '#FFFFFF',
 } as const satisfies IColors;

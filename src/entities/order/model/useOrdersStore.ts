@@ -8,6 +8,8 @@ import { makeStressOrders, STRESS_TEST, STRESS_TEST_COUNT } from './stress';
 import type { IServiceOrder, IServiceOrderPhoto } from './types';
 
 import { createId } from '@/shared/lib/id';
+import { logger } from '@/shared/lib/logger';
+import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
 // счётчики, ближайшая заявка) считается чистыми функциями в компонентах, а не здесь.
@@ -50,7 +52,8 @@ const transitionStatus = (
 const persistStatus = (orderId: string, status: ServiceOrderStatusEnum, action: string): void => {
   // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
   orderDatabaseService.updateOrderStatus(orderId, status).catch((error) => {
-    console.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+    logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+    useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
   });
 };
 
@@ -69,7 +72,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     }
     // Dev-only стресс-тест виртуализации: наполняем стор синтетикой мимо БД (см. model/stress.ts).
     if (STRESS_TEST) {
-      console.warn(
+      logger.warn(
         `[useOrdersStore.initialize] STRESS_TEST: ${STRESS_TEST_COUNT} синтетических заявок.`,
       );
       set({ orders: makeStressOrders(STRESS_TEST_COUNT), loading: false, error: null });
@@ -81,7 +84,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       await orderDatabaseService.seedDatabaseIfNeeded();
       set({ orders: await orderDatabaseService.getOrders(), error: null });
     } catch (error) {
-      console.error('[useOrdersStore.initialize] Не удалось инициализировать БД.', error);
+      logger.error('[useOrdersStore.initialize] Не удалось инициализировать БД.', error);
       set({ error: 'Не удалось загрузить заявки' });
     } finally {
       set({ loading: false });
@@ -99,7 +102,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       const orders = await orderDatabaseService.getOrders();
       set({ orders, error: null });
     } catch (error) {
-      console.error('[useOrdersStore.loadOrders] Не удалось загрузить заявки.', error);
+      logger.error('[useOrdersStore.loadOrders] Не удалось загрузить заявки.', error);
       set({ error: 'Не удалось загрузить заявки' });
     } finally {
       set({ loading: false });
@@ -178,7 +181,8 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     });
     // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
     orderDatabaseService.addOrderPhoto(orderId, photo).catch((error) => {
-      console.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
+      logger.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Фото не сохранено');
     });
   },
 
@@ -188,7 +192,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       // Перезагрузка из БД: после очистки список пуст → EmptyState на экранах.
       set({ orders: await orderDatabaseService.getOrders(), error: null });
     } catch (error) {
-      console.error('[useOrdersStore.clearDatabase] Не удалось очистить БД.', error);
+      logger.error('[useOrdersStore.clearDatabase] Не удалось очистить БД.', error);
       set({ error: 'Не удалось очистить базу данных' });
     }
   },

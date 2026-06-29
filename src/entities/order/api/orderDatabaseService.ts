@@ -6,6 +6,7 @@ import { ServiceOrderStatusEnum } from '../model/order-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
+import { logger } from '@/shared/lib/logger';
 
 // Database-сервис заявок — деталь реализации слайса (наружу через публичный API не выносится).
 // Инкапсулирует expo-sqlite: схему, сид и запросы заявок. Соединение берёт из project-agnostic
@@ -219,84 +220,67 @@ export const orderDatabaseService = {
   // DDL/PRAGMA — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для свежих установок
   // создаёт таблицы уже с координатами, для существующих — no-op (доводит migrateOrdersSchema).
   async initDatabase(): Promise<void> {
-    try {
-      const database = await getDatabase();
-      await database.execAsync(
-        `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; ${SCHEMA_SQL}`,
+    // Ошибку не ловим: пробрасываем вызывающему (useOrdersStore), который ставит store.error и
+    // логирует один раз — без двойного лога на двух слоях.
+    const database = await getDatabase();
+    await database.execAsync(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; ${SCHEMA_SQL}`);
+
+    const versionRow = await database.getFirstAsync<{ user_version: number }>(
+      'PRAGMA user_version;',
+    );
+    const currentVersion = versionRow?.user_version ?? 0;
+
+    if (currentVersion < DATABASE_VERSION) {
+      await migrateOrdersSchema(database);
+      // user_version нельзя параметризовать; DATABASE_VERSION — модульная числовая константа.
+      await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
+      logger.info(
+        `[orderDatabaseService.initDatabase] Схема мигрирована ${currentVersion} → ${DATABASE_VERSION}.`,
       );
-
-      const versionRow = await database.getFirstAsync<{ user_version: number }>(
-        'PRAGMA user_version;',
-      );
-      const currentVersion = versionRow?.user_version ?? 0;
-
-      if (currentVersion < DATABASE_VERSION) {
-        await migrateOrdersSchema(database);
-        // user_version нельзя параметризовать; DATABASE_VERSION — модульная числовая константа.
-        await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
-        console.info(
-          `[orderDatabaseService.initDatabase] Схема мигрирована ${currentVersion} → ${DATABASE_VERSION}.`,
-        );
-      }
-
-      console.info('[orderDatabaseService.initDatabase] БД инициализирована.');
-    } catch (error) {
-      console.error('[orderDatabaseService.initDatabase] Не удалось инициализировать БД.', error);
-      throw error;
     }
+
+    logger.info('[orderDatabaseService.initDatabase] БД инициализирована.');
   },
 
   // Идемпотентный сид: наполняет БД из MOCK_SERVICE_ORDERS только когда таблица пуста.
   async seedDatabaseIfNeeded(): Promise<void> {
-    try {
-      const database = await getDatabase();
-      const countRow = await database.getFirstAsync<{ count: number }>(
-        'SELECT COUNT(*) AS count FROM service_orders',
-      );
+    const database = await getDatabase();
+    const countRow = await database.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM service_orders',
+    );
 
-      if ((countRow?.count ?? 0) > 0) {
-        console.info('[orderDatabaseService.seedDatabaseIfNeeded] Сид пропущен (данные есть).');
+    if ((countRow?.count ?? 0) > 0) {
+      logger.info('[orderDatabaseService.seedDatabaseIfNeeded] Сид пропущен (данные есть).');
 
-        return;
-      }
-
-      // Вся партия сида — в одной транзакции (атомарность: либо все строки, либо ни одной).
-      await database.withTransactionAsync(async () => {
-        for (const order of MOCK_SERVICE_ORDERS) {
-          await insertOrder(database, order);
-
-          for (const photo of order.photos) {
-            await insertPhoto(database, order.id, photo);
-          }
-        }
-      });
-
-      console.info(
-        `[orderDatabaseService.seedDatabaseIfNeeded] Сид выполнен (${MOCK_SERVICE_ORDERS.length}).`,
-      );
-    } catch (error) {
-      console.error('[orderDatabaseService.seedDatabaseIfNeeded] Не удалось выполнить сид.', error);
-      throw error;
+      return;
     }
+
+    // Вся партия сида — в одной транзакции (атомарность: либо все строки, либо ни одной).
+    await database.withTransactionAsync(async () => {
+      for (const order of MOCK_SERVICE_ORDERS) {
+        await insertOrder(database, order);
+
+        for (const photo of order.photos) {
+          await insertPhoto(database, order.id, photo);
+        }
+      }
+    });
+
+    logger.info(
+      `[orderDatabaseService.seedDatabaseIfNeeded] Сид выполнен (${MOCK_SERVICE_ORDERS.length}).`,
+    );
   },
 
   // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS).
   async getOrders(): Promise<IServiceOrder[]> {
-    try {
-      const database = await getDatabase();
-      const orderRows = await database.getAllAsync<IServiceOrderRow>(
-        'SELECT * FROM service_orders',
-      );
-      const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
-        'SELECT * FROM service_order_photos',
-      );
-      const photosByOrderId = groupPhotosByOrderId(photoRows);
+    const database = await getDatabase();
+    const orderRows = await database.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
+    const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
+      'SELECT * FROM service_order_photos',
+    );
+    const photosByOrderId = groupPhotosByOrderId(photoRows);
 
-      return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
-    } catch (error) {
-      console.error('[orderDatabaseService.getOrders] Не удалось получить заявки.', error);
-      throw error;
-    }
+    return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
   },
 
   // Возвращает заявку по id с её фото или null. Caller в Phase 4 нет (детали читаются из памяти
@@ -320,43 +304,28 @@ export const orderDatabaseService = {
 
       return rowToOrder(orderRow, photoRows.map(rowToPhoto));
     } catch (error) {
-      console.error('[orderDatabaseService.getOrderById] Не удалось получить заявку.', error);
+      logger.error('[orderDatabaseService.getOrderById] Не удалось получить заявку.', error);
       throw error;
     }
   },
 
   // Персистит смену статуса заявки. Параметризованный UPDATE (без интерполяции).
   async updateOrderStatus(orderId: string, status: ServiceOrderStatusEnum): Promise<void> {
-    try {
-      const database = await getDatabase();
-      await database.runAsync('UPDATE service_orders SET status = ? WHERE id = ?', status, orderId);
-    } catch (error) {
-      console.error('[orderDatabaseService.updateOrderStatus] Не удалось обновить статус.', error);
-      throw error;
-    }
+    const database = await getDatabase();
+    await database.runAsync('UPDATE service_orders SET status = ? WHERE id = ?', status, orderId);
   },
 
   // Добавляет фото к заявке. Отклонение от §14 `addOrderPhoto(photo)`: в IServiceOrderPhoto нет
   // поля orderId, поэтому он передаётся отдельным аргументом. Caller — Phase 5 (камера), без UI-привязки.
   async addOrderPhoto(orderId: string, photo: IServiceOrderPhoto): Promise<void> {
-    try {
-      const database = await getDatabase();
-      await insertPhoto(database, orderId, photo);
-    } catch (error) {
-      console.error('[orderDatabaseService.addOrderPhoto] Не удалось добавить фото.', error);
-      throw error;
-    }
+    const database = await getDatabase();
+    await insertPhoto(database, orderId, photo);
   },
 
   // Полностью очищает обе таблицы. Фото удаляются раньше заявок из-за внешнего ключа.
   async clearDatabase(): Promise<void> {
-    try {
-      const database = await getDatabase();
-      await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
-      console.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
-    } catch (error) {
-      console.error('[orderDatabaseService.clearDatabase] Не удалось очистить БД.', error);
-      throw error;
-    }
+    const database = await getDatabase();
+    await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    logger.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
   },
 };

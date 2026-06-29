@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { requestMediaLibraryPermissionAsync } from './photoPermissionService';
 
 import { createId } from '@/shared/lib/id';
+import { logger } from '@/shared/lib/logger';
 
 // Качество JPEG для съёмки (0–1). 0.7 — компромисс между размером файла и детализацией фотоотчёта.
 const CAPTURE_QUALITY = 0.7;
@@ -34,11 +35,11 @@ export const photoService = {
   async capturePhoto(camera: CameraView): Promise<string | null> {
     try {
       const result = await camera.takePictureAsync({ quality: CAPTURE_QUALITY });
-      console.info('[photoService.capturePhoto] Снимок сделан.');
+      logger.info('[photoService.capturePhoto] Снимок сделан.');
 
       return result?.uri ?? null;
     } catch (error) {
-      console.error('[photoService.capturePhoto] Не удалось сделать снимок.', error);
+      logger.error('[photoService.capturePhoto] Не удалось сделать снимок.', error);
 
       return null;
     }
@@ -56,17 +57,17 @@ export const photoService = {
         quality: 1,
       });
       if (result.canceled) {
-        console.info('[photoService.pickPhotoFromLibrary] Выбор отменён.');
+        logger.info('[photoService.pickPhotoFromLibrary] Выбор отменён.');
 
         return null;
       }
 
       const uri = result.assets?.[0]?.uri ?? null;
-      console.info('[photoService.pickPhotoFromLibrary] Изображение выбрано.');
+      logger.info('[photoService.pickPhotoFromLibrary] Изображение выбрано.');
 
       return uri;
     } catch (error) {
-      console.error('[photoService.pickPhotoFromLibrary] Не удалось выбрать изображение.', error);
+      logger.error('[photoService.pickPhotoFromLibrary] Не удалось выбрать изображение.', error);
 
       return null;
     }
@@ -87,11 +88,11 @@ export const photoService = {
       }
       const destination = new File(directory, `${createId()}.${getExtension(tempUri)}`);
       new File(tempUri).copy(destination);
-      console.info('[photoService.persistPhoto] Снимок сохранён в постоянное хранилище.');
+      logger.info('[photoService.persistPhoto] Снимок сохранён в постоянное хранилище.');
 
       return destination.uri;
     } catch (error) {
-      console.error('[photoService.persistPhoto] Не удалось сохранить снимок.', error);
+      logger.error('[photoService.persistPhoto] Не удалось сохранить снимок.', error);
 
       // Фоллбэк на временный URI: менее надёжен (кэш может очиститься), но не теряет снимок.
       return tempUri;

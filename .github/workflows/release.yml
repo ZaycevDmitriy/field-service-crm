@@ -1,0 +1,100 @@
+# Единый релизный pipeline. Триггер — push в main. Релизный PR develop→main мержится `--no-ff`
+# (не squash!), поэтому гранулярные feat:/fix: сохраняются и semantic-release считает версию верно.
+# Один push в main = один релиз:
+#   quality → semantic-release (версия + CHANGELOG + tag + GitHub Release notes — ВСЕГДА) →
+#   доставка по fingerprint (совпал → eas update/OTA; изменился → APK в Release) → back-merge main→develop.
+#
+# Путь A: APK собирается нативным Gradle на раннере (без EAS Build). OTA — eas update (нужен EXPO_TOKEN).
+# Ветвление OTA↔APK — в scripts/release/build-android.sh (prepare) + publish-delivery.sh (publish).
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# contents: тег/Release/пуш CHANGELOG и back-merge; issues/PR — комментарии semantic-release к связанным PR.
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+# Параллельные релизы не запускаем; идущий релиз не отменяем.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Quality
+    uses: ./.github/workflows/quality.yml
+
+  release:
+    name: Release (semantic-release + OTA/APK)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # semantic-release анализирует всю историю коммитов и теги — мелкий клон ломает расчёт версии.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Java/Gradle нужны APK-ветви (prepare гонит prebuild + assembleRelease при изменении нативки).
+      - name: Setup Java (Temurin 17)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # eas-cli нужен OTA-ветви (publish-delivery.sh: eas update при совпавшем fingerprint).
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Версия, CHANGELOG, доставка (OTA/APK) и GitHub Release — всё по .releaserc.json. Токен по умолчанию
+      # не ре-триггерит workflow (пуш CHANGELOG в main петлю не создаёт), плюс [skip ci] в коммите бота.
+      # GH_TOKEN: gh release download/upload в скриптах. EXPO_TOKEN: eas update в OTA-ветви.
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx semantic-release
+
+  # После релиза возвращаем CHANGELOG-коммит (и тег-историю) с main обратно в develop, чтобы ветки
+  # не расходились. Прямой push под GITHUB_TOKEN работает при отсутствии branch protection «только PR»
+  # на develop; пуш токеном workflow не ре-триггерит (петли нет).
+  backmerge:
+    name: Back-merge main → develop
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Merge main into develop
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          echo "Back-merge origin/main → develop"
+          git merge --no-edit origin/main
+          git push origin develop

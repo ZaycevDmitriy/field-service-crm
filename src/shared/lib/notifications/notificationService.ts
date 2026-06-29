@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { logger } from '@/shared/lib/logger';
+
 // Минимальный контракт контента напоминания. Business-agnostic: сегмент shared не знает про entity
 // order — маппинг IServiceOrder → IReminderContent живёт выше, в features/order-reminder.
 export interface IReminderContent {
@@ -25,11 +27,12 @@ Notifications.setNotificationHandler({
 
 /**
  * Создаёт Android-канал «order-reminders» (idempotent: setNotificationChannelAsync создаёт или
- * обновляет). На iOS каналов нет — no-op. Вызывать при старте, до первого планирования.
+ * обновляет). На iOS каналов нет — no-op. Вызывать при старте, до первого планирования. Возвращает
+ * true при успехе (и на iOS, где канал не нужен), false — при сбое создания канала.
  */
-export async function configureNotifications(): Promise<void> {
+export async function configureNotifications(): Promise<boolean> {
   if (Platform.OS !== 'android') {
-    return;
+    return true;
   }
 
   try {
@@ -37,18 +40,37 @@ export async function configureNotifications(): Promise<void> {
       name: 'Напоминания по заявкам',
       importance: Notifications.AndroidImportance.HIGH,
     });
-    console.info('[notificationService.configureNotifications] Канал order-reminders готов.');
+    logger.info('[notificationService.configureNotifications] Канал order-reminders готов.');
+
+    return true;
   } catch (error) {
-    console.error('[notificationService.configureNotifications] Не удалось создать канал.', error);
+    logger.error('[notificationService.configureNotifications] Не удалось создать канал.', error);
+
+    return false;
   }
 }
 
+// Результат запроса разрешения на уведомления: выдано / отказано / сбой запроса. const-object + тип
+// вместо TS enum (PDR §6). Разделяет «отказ» (вести в настройки) и «сбой» (показать ошибку).
+export const PermissionResultEnum = {
+  Granted: 'granted',
+  Denied: 'denied',
+  Error: 'error',
+} as const;
+export type PermissionResultEnum = (typeof PermissionResultEnum)[keyof typeof PermissionResultEnum];
+
+// Чистый маппинг статуса разрешения expo в доменный результат (Granted/Denied). Сбой запроса (Error)
+// сюда не доходит — он обрабатывается в catch requestPermission. Вынесен отдельно для юнит-теста.
+export function mapPermissionStatus(status: Notifications.PermissionStatus): PermissionResultEnum {
+  return status === 'granted' ? PermissionResultEnum.Granted : PermissionResultEnum.Denied;
+}
+
 /**
- * Запрашивает разрешение на уведомления (graceful): true — granted, иначе false (denied/сбой). Сначала
- * читает текущий статус и запрашивает только если ещё не granted. На Android 13+ это же вызывает
- * системный запрос POST_NOTIFICATIONS.
+ * Запрашивает разрешение на уведомления (graceful): Granted — выдано, Denied — отказано, Error — сбой
+ * запроса. Сначала читает текущий статус и запрашивает только если ещё не granted. На Android 13+ это
+ * же вызывает системный запрос POST_NOTIFICATIONS.
  */
-export async function requestPermission(): Promise<boolean> {
+export async function requestPermission(): Promise<PermissionResultEnum> {
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -56,21 +78,21 @@ export async function requestPermission(): Promise<boolean> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    console.info(`[notificationService.requestPermission] Статус разрешения: ${finalStatus}.`);
-    if (finalStatus !== 'granted') {
-      console.warn(
+    const result = mapPermissionStatus(finalStatus);
+    logger.info(
+      `[notificationService.requestPermission] Статус разрешения: ${finalStatus} (${result}).`,
+    );
+    if (result !== PermissionResultEnum.Granted) {
+      logger.warn(
         '[notificationService.requestPermission] Разрешение на уведомления не предоставлено.',
       );
     }
 
-    return finalStatus === 'granted';
+    return result;
   } catch (error) {
-    console.error(
-      '[notificationService.requestPermission] Не удалось запросить разрешение.',
-      error,
-    );
+    logger.error('[notificationService.requestPermission] Не удалось запросить разрешение.', error);
 
-    return false;
+    return PermissionResultEnum.Error;
   }
 }
 
@@ -95,13 +117,13 @@ export async function scheduleOrderReminder(
         channelId: ORDER_REMINDERS_CHANNEL_ID,
       },
     });
-    console.info(
+    logger.info(
       `[notificationService.scheduleOrderReminder] Напоминание ${id} запланировано через ${seconds} c.`,
     );
 
     return id;
   } catch (error) {
-    console.error('[notificationService.scheduleOrderReminder] Не удалось запланировать.', error);
+    logger.error('[notificationService.scheduleOrderReminder] Не удалось запланировать.', error);
 
     return null;
   }

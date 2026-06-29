@@ -1,5 +1,5 @@
 {
-  "branches": ["release"],
+  "branches": ["main"],
   "tagFormat": "v${version}",
   "plugins": [
     ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
@@ -12,9 +12,9 @@
     }],
     ["@semantic-release/github", {
       "assets": [
-        { "path": "dist/*.apk", "label": "Android APK (onsite-v${nextRelease.version}.apk)" },
         { "path": "dist/*.fingerprint.txt", "label": "runtimeVersion fingerprint" }
       ]
-    }]
+    }],
+    ["@semantic-release/exec", { "publishCmd": "bash scripts/release/publish-delivery.sh ${nextRelease.version}" }]
   ]
 }

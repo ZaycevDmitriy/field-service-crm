@@ -1,6 +1,7 @@
 # Onsite
 
 [![CI](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/ci.yml)
+[![Release](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/release.yml/badge.svg)](https://github.com/ZaycevDmitriy/field-service-crm/actions/workflows/release.yml)
 
 **English** · [Русский](README.ru.md)
 
@@ -217,18 +218,22 @@ binary — that is the automatic native-vs-JS boundary.
 
 ## Releases
 
-Versioning and release notes are automated with [semantic-release](https://semantic-release.gitbook.io/)
-from [Conventional Commits](https://www.conventionalcommits.org/): the version is an *output* derived
-from the commits since the last release, not set by hand.
+The project follows a **develop / main** gitflow: day-to-day work lands on `develop`; a release is a
+single pull request from `develop` into `main`. Versioning and release notes are automated with
+[semantic-release](https://semantic-release.gitbook.io/) from
+[Conventional Commits](https://www.conventionalcommits.org/): the version is an *output* derived from
+the commits since the last release, not set by hand.
 
-Releasing is a manual gate — open a pull request from `main` into the `release` branch. Merging it runs
-the [release pipeline](.github/workflows/release-android.yml) on GitHub Actions, which:
+Releasing is a manual gate — open a pull request from `develop` into `main` and merge it with a
+**merge commit** (`--no-ff`, *not* squash, so the individual `feat:` / `fix:` commits survive for
+version analysis). The push to `main` runs the [release pipeline](.github/workflows/release.yml) on
+GitHub Actions, which:
 
 1. runs the quality gate (lint, typecheck, format, tests),
-2. computes the next version from the commit history,
-3. builds the Android APK on the runner (native Gradle, no EAS credentials) stamped with that version,
-4. publishes a [GitHub Release](../../releases) with the APK and its `runtimeVersion` fingerprint,
-5. updates [`CHANGELOG.md`](CHANGELOG.md) and back-merges `release` into `main`.
+2. computes the next version from the commit history, updates [`CHANGELOG.md`](CHANGELOG.md), and
+   publishes a `v<version>` tag and [GitHub Release](../../releases) with notes,
+3. picks the delivery channel automatically by the native fingerprint (see below),
+4. back-merges `main` into `develop` so the branches stay in sync.
 
 Commit types drive the bump: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` or a `BREAKING CHANGE:`
 footer → major; `chore:` / `docs:` / `ci:` do not trigger a release. Commit messages use an English type
@@ -236,13 +241,16 @@ with a Russian description.
 
 ### Delivery channels
 
+A single release picks the channel automatically by comparing the current native fingerprint with the
+last release:
+
 | What changed | How it ships |
 |--------------|--------------|
-| Native code or packages (SDK, permissions, native modules, icons) | A new **APK release** via the pipeline above |
-| Only JS / TS and assets | An **EAS Update** (OTA) on the `production` channel |
+| Native code or packages (SDK, permissions, native modules, icons) — fingerprint changed | A new **APK** built on the runner (native Gradle) and attached to the GitHub Release |
+| Only JS / TS and assets — fingerprint unchanged | An **EAS Update** (OTA) on the `production` channel |
 
-OTA is gated by the `fingerprint` runtime version, so a JS update only lands on a build whose native
-fingerprint matches (see [EAS Update Demo](#eas-update-demo)).
+The `fingerprint` runtime version is what makes this safe: a JS update only lands on a build whose
+native fingerprint matches (see [EAS Update Demo](#eas-update-demo)).
 
 ## Design Source
 

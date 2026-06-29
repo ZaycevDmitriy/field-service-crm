@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
 
-import { useAppStore } from '@/shared/model';
+import { logger } from '@/shared/lib/logger';
+import { ToastVariantEnum, useAppStore, useToastStore } from '@/shared/model';
 
 // Точка назначения маршрута — координаты адреса заявки (минимальный контракт, без связи с entity).
 export interface IRouteDestination {
@@ -37,7 +38,7 @@ export async function openMapsRoute(destination: IRouteDestination): Promise<voi
   try {
     if (Platform.OS === 'ios') {
       const isYandexInstalled = await Linking.canOpenURL(YANDEX_APP_SCHEME);
-      console.debug(`[openMapsRoute] Яндекс.Карты установлены (iOS): ${isYandexInstalled}.`);
+      logger.debug(`[openMapsRoute] Яндекс.Карты установлены (iOS): ${isYandexInstalled}.`);
       await Linking.openURL(isYandexInstalled ? deepLink : webUrl);
 
       return;
@@ -46,11 +47,12 @@ export async function openMapsRoute(destination: IRouteDestination): Promise<voi
     // Android: пробуем приложение, при сбое — web (см. catch).
     await Linking.openURL(deepLink);
   } catch (error) {
-    console.warn('[openMapsRoute] Deep link не открылся, fallback на web.', error);
+    logger.warn('[openMapsRoute] Deep link не открылся, fallback на web.', error);
     try {
       await Linking.openURL(webUrl);
     } catch (webError) {
-      console.error('[openMapsRoute] Не удалось открыть карты.', webError);
+      logger.error('[openMapsRoute] Не удалось открыть карты.', webError);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось открыть карты');
     }
   }
 }

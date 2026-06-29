@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { photoService } from '../lib/photoService';
 
 import { Radius, Spacing } from '@/shared/config';
+import { logger } from '@/shared/lib/logger';
+import { ToastVariantEnum, useToastStore } from '@/shared/model';
 import { Button, IconButton, IconSymbol, Text } from '@/shared/ui';
 
 export interface IPhotoCaptureViewProps {
@@ -64,10 +66,12 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
   const [isCameraReady, setIsCameraReady] = useState(false);
   // Блокирует параллельные захваты (двойной тап шторки/галереи) на время съёмки и сохранения.
   const [isBusy, setIsBusy] = useState(false);
+  // Камера не смонтировалась (onMountError) — показываем фоллбэк с галереей вместо CameraView.
+  const [cameraMountError, setCameraMountError] = useState(false);
 
   useEffect(() => {
     if (permission && !permission.granted) {
-      console.warn('[PhotoCaptureView] Доступ к камере не предоставлен.');
+      logger.warn('[PhotoCaptureView] Доступ к камере не предоставлен.');
     }
   }, [permission]);
 
@@ -87,7 +91,14 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
     }
     setIsBusy(true);
     try {
-      await persistAndEmit(await photoService.capturePhoto(cameraRef.current));
+      const tempUri = await photoService.capturePhoto(cameraRef.current);
+      // capturePhoto возвращает null только при сбое (отмены у съёмки нет) — сообщаем тостом.
+      if (!tempUri) {
+        useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось сделать снимок');
+
+        return;
+      }
+      await persistAndEmit(tempUri);
     } finally {
       setIsBusy(false);
     }
@@ -113,7 +124,9 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
     if (permission?.canAskAgain) {
       requestPermission();
     } else {
-      Linking.openSettings();
+      Linking.openSettings().catch((error) => {
+        logger.warn('[PhotoCaptureView] Не удалось открыть настройки.', error);
+      });
     }
   };
 
@@ -176,6 +189,42 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
     );
   }
 
+  // Камера смонтировалась с ошибкой (onMountError) — фоллбэк с галереей, как при отказе в доступе.
+  if (cameraMountError) {
+    return (
+      <View style={rootStyle}>
+        <View style={styles.header}>
+          <IconButton
+            icon="xmark"
+            accessibilityLabel="Закрыть"
+            color={CAMERA.shutter}
+            onPress={onClose}
+          />
+          <Text weight="semibold" color="white">
+            Фотоотчёт
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.deniedBody}>
+          <IconSymbol name="camera.fill" size={48} color={CAMERA.muted} />
+          <Text style={styles.deniedText}>Камера недоступна. Выберите фото из галереи.</Text>
+          <View style={styles.deniedActions}>
+            <Button
+              title="Выбрать из галереи"
+              variant="primary"
+              size="lg"
+              fullWidth
+              disabled={isBusy}
+              onPress={() => {
+                void handleGallery();
+              }}
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   // Разрешение получено — камера и контролы съёмки.
   return (
     <View style={rootStyle}>
@@ -205,7 +254,8 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
         mode="picture"
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(event) => {
-          console.error('[PhotoCaptureView] Камера не запустилась.', event.message);
+          logger.error('[PhotoCaptureView] Камера не запустилась.', event.message);
+          setCameraMountError(true);
         }}
       />
 
