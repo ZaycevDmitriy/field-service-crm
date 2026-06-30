@@ -10,7 +10,7 @@ import { type ConfigContext, type ExpoConfig } from 'expo/config';
 // `runtimeVersion: fingerprint` — автоматически вычисляет границу совместимости build↔update
 // по нативному отпечатку (@expo/fingerprint): несовместимые OTA не доедут до старого билда.
 // `extra.buildProfile` читает built-in env `EAS_BUILD_PROFILE` (доступен только в EAS Build,
-// не при локальной оценке конфига) → локально null, экран настроек падает на авторитетный
+// не при локальной оценке конфига) → локально undefined, экран настроек падает на авторитетный
 // `Updates.channel` (см. features/app-updates).
 
 // Проводка версии и канала OTA для релиза по «Пути A» (Gradle на раннере, без EAS Build).
@@ -117,7 +117,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     // Имя build-профиля EAS (development/preview/production). Локально undefined → ключ опускается
     // при сериализации (Expo превращает null в {}, поэтому используем undefined, а не `?? null`).
-    // buildProfile: process.env.EAS_BUILD_PROFILE,
+    buildProfile: process.env.EAS_BUILD_PROFILE,
     eas: {
       projectId: '1af6a2a8-4892-4d9a-961a-1792ae2a8277',
     },

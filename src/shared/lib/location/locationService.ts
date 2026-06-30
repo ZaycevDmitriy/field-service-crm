@@ -9,6 +9,10 @@ export interface ICoords {
   longitude: number;
 }
 
+// expo-location не поддерживает таймаут нативно (getCurrentPositionAsync может зависнуть без GPS-
+// фикса); ограничиваем ожидание вручную через Promise.race.
+const LOCATION_TIMEOUT_MS = 10000;
+
 // Сервис геолокации — единственная точка доступа к нативному expo-location (FSD: нативные API в
 // сервисах shared/lib, UI/стор не дёргают их напрямую). Все методы graceful: при отказе/сбое не
 // бросают, а возвращают «пусто» — отказ в разрешении не блокирует флоу заявок (PDR §16).
@@ -35,13 +39,16 @@ export const locationService = {
     }
   },
 
-  // Возвращает текущие координаты или null (сбой). Точность Balanced — компромисс скорость/энергия,
-  // достаточна для дистанции «по прямой» (не для пошаговой навигации).
+  // Возвращает текущие координаты или null (сбой/таймаут). Точность Balanced — компромисс
+  // скорость/энергия, достаточна для дистанции «по прямой» (не для пошаговой навигации).
   async getCurrentCoords(): Promise<ICoords | null> {
     try {
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Location request timed out')), LOCATION_TIMEOUT_MS);
+        }),
+      ]);
       const { latitude, longitude } = position.coords;
       logger.debug(`[locationService.getCurrentCoords] Координаты: ${latitude}, ${longitude}.`);
 

@@ -275,13 +275,20 @@ export const orderDatabaseService = {
     );
   },
 
-  // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS).
+  // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS). Оба SELECT —
+  // в одной транзакции (согласованный снимок при параллельной записи, напр. addOrderPhoto).
   async getOrders(): Promise<IServiceOrder[]> {
     const database = await getDatabase();
-    const orderRows = await database.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
-    const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
-      'SELECT * FROM service_order_photos',
-    );
+    let orderRows: IServiceOrderRow[] = [];
+    let photoRows: IServiceOrderPhotoRow[] = [];
+
+    await database.withTransactionAsync(async () => {
+      orderRows = await database.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
+      photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
+        'SELECT * FROM service_order_photos',
+      );
+    });
+
     const photosByOrderId = groupPhotosByOrderId(photoRows);
 
     return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));

@@ -7,21 +7,16 @@ export interface ICurrentLocation {
 }
 
 // App-wide стор (PDR §13.2): кросс-экранное долгоживущее состояние, не привязанное к заявкам.
-// В Phase 3 фактически задействован только `offline` (OfflineBanner); остальные поля — задел.
 export interface IAppStore {
-  offline: boolean;
   lastUpdateCheck: string | null;
   currentLocation: ICurrentLocation | null;
-  setOffline: (offline: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setCurrentLocation: (location: ICurrentLocation | null) => void;
 }
 
 export const useAppStore = create<IAppStore>()((set) => ({
-  offline: false,
   lastUpdateCheck: null,
   currentLocation: null,
-  setOffline: (offline) => set({ offline }),
   setLastUpdateCheck: (timestamp) => set({ lastUpdateCheck: timestamp }),
   setCurrentLocation: (location) => set({ currentLocation: location }),
 }));

@@ -3,12 +3,19 @@ import { Alert, Linking, type AlertButton } from 'react-native';
 import type { IServiceOrder } from '@/entities/order';
 import { logger } from '@/shared/lib/logger';
 import {
+  cancelOrderReminder,
   PermissionResultEnum,
   requestPermission,
   scheduleOrderReminder,
   type IReminderContent,
 } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
+
+// Id последнего запланированного напоминания по заявке (orderId → notificationId) — для
+// дедупликации: повторное подтверждение пресета отменяет предыдущее напоминание перед планированием
+// нового. In-memory на время сессии приложения; переживание перезапуска требует персистентности
+// reminder-id в БД — отдельная фича расширения схемы, не точечный фикс (не делаем без явного запроса).
+const scheduledReminderIds = new Map<string, string>();
 
 // Пресет-офсеты напоминания. У заявки нет реального поля даты визита (только строки scheduledTime/
 // scheduledSlot), поэтому напоминание ставится относительным интервалом (TIME_INTERVAL), а не на дату
@@ -68,12 +75,20 @@ async function scheduleWithPermission(
     return;
   }
 
+  // Дедупликация: если по этой заявке уже есть запланированное напоминание — отменяем его перед
+  // постановкой нового (иначе повторное подтверждение пресета копит дубликаты).
+  const existingId = scheduledReminderIds.get(order.id);
+  if (existingId) {
+    await cancelOrderReminder(existingId);
+  }
+
   const id = await scheduleOrderReminder(toReminderContent(order), offset.seconds);
   if (!id) {
     Alert.alert('Не удалось', 'Не получилось запланировать напоминание. Попробуйте ещё раз.');
 
     return;
   }
+  scheduledReminderIds.set(order.id, id);
 
   Alert.alert('Напоминание поставлено', `Напомним ${offset.label.toLowerCase()}.`);
 }
