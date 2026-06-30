@@ -42,11 +42,15 @@ export const locationService = {
   // Возвращает текущие координаты или null (сбой/таймаут). Точность Balanced — компромисс
   // скорость/энергия, достаточна для дистанции «по прямой» (не для пошаговой навигации).
   async getCurrentCoords(): Promise<ICoords | null> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const position = await Promise.race([
         Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
         new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Location request timed out')), LOCATION_TIMEOUT_MS);
+          timeoutId = setTimeout(
+            () => reject(new Error('Location request timed out')),
+            LOCATION_TIMEOUT_MS,
+          );
         }),
       ]);
       const { latitude, longitude } = position.coords;
@@ -57,6 +61,9 @@ export const locationService = {
       logger.error('[locationService.getCurrentCoords] Не удалось получить координаты.', error);
 
       return null;
+    } finally {
+      // Отменяем таймер: при выигрыше геолокации он иначе «висит» до LOCATION_TIMEOUT_MS впустую.
+      clearTimeout(timeoutId);
     }
   },
 };

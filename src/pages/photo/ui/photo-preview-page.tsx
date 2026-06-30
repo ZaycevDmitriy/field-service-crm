@@ -5,7 +5,7 @@ import { KeyboardController } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
-import { PhotoPreview, photoService } from '@/features/photo-capture';
+import { deletePhoto, PhotoPreview } from '@/features/photo-capture';
 import { Spacing, useColors } from '@/shared/config';
 import { ScreenHeader } from '@/shared/ui';
 
@@ -32,7 +32,7 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
       if (!savedRef.current) {
         // Orphan-cleanup: пользователь ушёл с экрана без сохранения («Назад»/«Переснять») —
         // удаляем уже скопированный файл. Fire-and-forget (deletePhoto не бросает) — не блокирует навигацию.
-        photoService.deletePhoto(uri);
+        deletePhoto(uri);
       }
     });
 
