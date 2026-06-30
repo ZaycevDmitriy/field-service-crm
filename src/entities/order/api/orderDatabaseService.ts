@@ -21,7 +21,8 @@ import { logger } from '@/shared/lib/logger';
 const DATABASE_VERSION = 2;
 
 // Row-интерфейсы: представление строк таблиц (snake_case колонки). Маппятся на домен (camelCase).
-interface IServiceOrderRow {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+export interface IServiceOrderRow {
   id: string;
   status: string;
   title: string;
@@ -34,7 +35,7 @@ interface IServiceOrderRow {
   longitude: number;
 }
 
-interface IServiceOrderPhotoRow {
+export interface IServiceOrderPhotoRow {
   id: string;
   order_id: string;
   uri: string;
@@ -73,18 +74,20 @@ const SCHEMA_SQL = `
 // (см. photoService.persistPhoto); внешние и mock-схемы (mock://, http(s)://) не конвертируются.
 
 // Абсолютный file://-URI под document-каталогом → относительный путь; прочие схемы — как есть.
-const toStoredUri = (uri: string): string => {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts), потребитель в рантайме
+// остаётся только этот модуль.
+export const toStoredUri = (uri: string): string => {
   const documentUri = Paths.document.uri;
 
   return uri.startsWith(documentUri) ? uri.slice(documentUri.length).replace(/^\/+/, '') : uri;
 };
 
 // Относительный путь без URI-схемы → абсолютный URI под текущим document-каталогом; URI со схемой — как есть.
-const toRuntimeUri = (stored: string): string =>
+export const toRuntimeUri = (stored: string): string =>
   stored.includes('://') ? stored : new File(Paths.document, stored).uri;
 
 // Мапперы (чистые, типизированные): snake_case строка БД ↔ camelCase домен.
-const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
+export const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   id: row.id,
   uri: toRuntimeUri(row.uri),
   // `comment` опционален в домене: NULL из БД → отсутствие ключа.
@@ -92,7 +95,7 @@ const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   createdAt: row.created_at,
 });
 
-const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
+export const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
   id: row.id,
   // В колонке хранятся значения ServiceOrderStatusEnum (запись контролируется сервисом).
   status: row.status as ServiceOrderStatusEnum,
@@ -183,7 +186,8 @@ const groupPhotosByOrderId = (rows: IServiceOrderPhotoRow[]): Map<string, IServi
 // Миграция схемы заявок до v2 (Phase 6): добавляет координаты в существующие установки и убирает
 // производный distance_label. Идемпотентна и безопасна для свежих установок — операции применяются
 // только если фактическая схема таблицы этого требует (интроспекция через PRAGMA table_info).
-const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
   const columns = await database.getAllAsync<{ name: string }>(
     'PRAGMA table_info(service_orders);',
   );
