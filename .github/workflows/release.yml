@@ -13,12 +13,6 @@ on:
     branches:
       - main
 
-# contents: тег/Release/пуш CHANGELOG и back-merge; issues/PR — комментарии semantic-release к связанным PR.
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-
 # Параллельные релизы не запускаем; идущий релиз не отменяем.
 concurrency:
   group: release-${{ github.ref }}
@@ -27,21 +21,32 @@ concurrency:
 jobs:
   quality:
     name: Quality
+    # timeout-minutes недопустим у job, вызывающего reusable workflow через uses (только
+    # name/uses/with/secrets/needs/if/permissions) — таймаут уже на самой job внутри quality.yml.
     uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
 
   release:
     name: Release (semantic-release + OTA/APK)
     needs: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # contents: тег/Release/пуш CHANGELOG; issues/pull-requests: @semantic-release/github по умолчанию
+    # комментирует issues/PR, закрытые релизом (successComment не отключён в .releaserc.json).
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           # semantic-release анализирует всю историю коммитов и теги — мелкий клон ломает расчёт версии.
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -51,17 +56,17 @@ jobs:
 
       # Java/Gradle нужны APK-ветви (prepare гонит prebuild + assembleRelease при изменении нативки).
       - name: Setup Java (Temurin 17)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
 
       # eas-cli нужен OTA-ветви (publish-delivery.sh: eas update при совпавшем fingerprint).
       - name: Setup EAS
-        uses: expo/expo-github-action@v9
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
@@ -83,9 +88,13 @@ jobs:
     name: Back-merge main → develop
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Только git push develop — issues/pull-requests не нужны (в отличие от job release).
+    permissions:
+      contents: write
     steps:
       - name: Checkout develop
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: develop
           fetch-depth: 0

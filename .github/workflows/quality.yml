@@ -5,16 +5,23 @@ name: Quality
 on:
   workflow_call:
 
+# Шаги только читают репозиторий и зависимости (npm ci/lint/typecheck/test) — пишущий доступ не нужен.
+# Вызывается из release.yml, где у workflow есть contents:write — без явного read здесь job
+# по умолчанию унаследовал бы write-токен.
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Lint, typecheck, format, test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version-file: .nvmrc
           cache: npm
