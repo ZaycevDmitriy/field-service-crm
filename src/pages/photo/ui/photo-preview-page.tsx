@@ -1,11 +1,11 @@
 import { useNavigation, useRouter } from 'expo-router';
-import { type FC, useEffect } from 'react';
+import { type FC, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { KeyboardController } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
-import { PhotoPreview } from '@/features/photo-capture';
+import { PhotoPreview, photoService } from '@/features/photo-capture';
 import { Spacing, useColors } from '@/shared/config';
 import { ScreenHeader } from '@/shared/ui';
 
@@ -22,19 +22,28 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const addOrderPhoto = useOrdersStore((state) => state.addOrderPhoto);
+  // Снимок копируется в постоянное хранилище ДО подтверждения (см. photoService.persistPhoto) — без
+  // этого флага beforeRemove удалил бы только что сохранённое фото (dismissTo тоже его триггерит).
+  const savedRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', () => {
       KeyboardController.dismiss();
+      if (!savedRef.current) {
+        // Orphan-cleanup: пользователь ушёл с экрана без сохранения («Назад»/«Переснять») —
+        // удаляем уже скопированный файл. Fire-and-forget (deletePhoto не бросает) — не блокирует навигацию.
+        photoService.deletePhoto(uri);
+      }
     });
 
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, uri]);
 
   // «Назад» и «Переснять» — один возврат к экрану съёмки (он остаётся в стеке под card).
   const handleBack = () => router.back();
 
   const handleSave = (comment: string) => {
+    savedRef.current = true;
     // Доменную сборку фото (id/createdAt) делает стор; здесь — только привязка к заявке.
     addOrderPhoto(orderId, { uri, comment });
     // dismissTo снимает модальную группу camera/[orderId] (и съёмку, и предпросмотр) и возвращает

@@ -98,4 +98,20 @@ export const photoService = {
       return tempUri;
     }
   },
+
+  /**
+   * Удаляет файл фото из постоянного хранилища (orphan-cleanup при отмене/пересъёмке на экране
+   * предпросмотра — снимок копируется в persistPhoto ДО подтверждения пользователем). Тихо
+   * игнорирует ошибку: файл может уже отсутствовать, флоу это не блокирует.
+   */
+  async deletePhoto(uri: string): Promise<void> {
+    try {
+      const file = new File(uri);
+      if (file.exists) {
+        file.delete();
+      }
+    } catch (error) {
+      logger.error('[photoService.deletePhoto] Не удалось удалить файл фото.', error);
+    }
+  },
 };

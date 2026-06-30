@@ -322,9 +322,26 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
-  // Полностью очищает обе таблицы. Фото удаляются раньше заявок из-за внешнего ключа.
+  // Полностью очищает обе таблицы и физические файлы фото на диске. Файлы удаляются ДО DELETE
+  // (пока относительные пути ещё доступны в таблице); сбой удаления отдельного файла не прерывает
+  // очистку БД. Фото-строки удаляются раньше заявок из-за внешнего ключа.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
+    const photoRows = await database.getAllAsync<{ uri: string }>(
+      'SELECT uri FROM service_order_photos',
+    );
+    await Promise.all(
+      photoRows.map(async ({ uri }) => {
+        try {
+          const file = new File(toRuntimeUri(uri));
+          if (file.exists) {
+            file.delete();
+          }
+        } catch (error) {
+          logger.error('[orderDatabaseService.clearDatabase] Не удалось удалить файл фото.', error);
+        }
+      }),
+    );
     await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
     logger.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
   },
