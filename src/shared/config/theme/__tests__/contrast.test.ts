@@ -1,11 +1,10 @@
+import { darkColors, lightColors, type IColors } from '../colors';
+
 import {
-  darkColors,
   darkOrderStatusColors,
-  lightColors,
   lightOrderStatusColors,
-  type IColors,
   type IOrderStatusColors,
-} from '../colors';
+} from '@/entities/order';
 
 // Утилита контраста (WCAG 2.1) инлайн в тесте: единственный потребитель — этот сьют. Считает
 // относительную яркость и contrast ratio; полупрозрачные rgba-токены (в тёмной теме — *Surface,
