@@ -1,13 +1,5 @@
-export {
-  lightColors,
-  darkColors,
-  lightOrderStatusColors,
-  darkOrderStatusColors,
-  type IColors,
-  type IOrderStatusColor,
-  type IOrderStatusColors,
-} from './colors';
-export { useColors, useOrderStatusColors } from './use-colors';
+export { lightColors, darkColors, type IColors } from './colors';
+export { useColors } from './use-colors';
 export { useColorScheme } from './use-color-scheme';
 export { Spacing } from './spacing';
 export { Radius } from './radius';

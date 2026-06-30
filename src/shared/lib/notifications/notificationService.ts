@@ -128,3 +128,19 @@ export async function scheduleOrderReminder(
     return null;
   }
 }
+
+/**
+ * Отменяет ранее запланированное напоминание по id (graceful — сбой не бросает, только логирует).
+ * Используется для дедупликации: новое напоминание по заявке отменяет предыдущее перед планированием.
+ */
+export async function cancelOrderReminder(id: string): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+    logger.info(`[notificationService.cancelOrderReminder] Напоминание ${id} отменено.`);
+  } catch (error) {
+    logger.error(
+      '[notificationService.cancelOrderReminder] Не удалось отменить напоминание.',
+      error,
+    );
+  }
+}

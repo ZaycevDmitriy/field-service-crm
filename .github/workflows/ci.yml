@@ -7,6 +7,10 @@ on:
   push:
     branches: [develop]
 
+# Оба job только читают репозиторий (checkout + lint/typecheck/test, actionlint) — write не нужен.
+permissions:
+  contents: read
+
 # Новый push в ту же ветку/PR отменяет предыдущий незавершённый прогон.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -15,14 +19,17 @@ concurrency:
 jobs:
   quality:
     name: Quality
+    # timeout-minutes недопустим у job, вызывающего reusable workflow через uses (только
+    # name/uses/with/secrets/needs/if/permissions) — таймаут уже на самой job внутри quality.yml.
     uses: ./.github/workflows/quality.yml
 
   actionlint:
     name: Lint workflows (actionlint)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # Бинарь actionlint и его версия запинены детерминированно (скрипт по тегу + версия аргументом).
       # actionlint сам прогоняет shellcheck по всем `run:`-блокам (shellcheck предустановлен на ubuntu-latest).

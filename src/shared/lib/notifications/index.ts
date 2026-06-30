@@ -8,5 +8,6 @@ export {
   PermissionResultEnum,
   requestPermission,
   scheduleOrderReminder,
+  cancelOrderReminder,
   type IReminderContent,
 } from './notificationService';
