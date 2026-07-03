@@ -8,3 +8,10 @@ ios/**/*
 
 # Артефакты релиза (APK + сайдкар-fingerprint) не должны влиять на сам отпечаток.
 dist/**/*
+
+# Каталог Gradle-плагина expo-updates волатилен: composite build (includeBuild) при `assembleRelease`
+# кладёт в него служебные артефакты (.gradle/ и т.п.), из-за чего fingerprint, вычисляемый задачей
+# createUpdatesResources ВО ВРЕМЯ сборки, расходился со значением, посчитанным до prebuild
+# (v1.2.0: APK зашил 489ff41b при записанном 6b39ec6a — OTA не доезжали). Исходники плагина меняются
+# только вместе с версией expo-updates, которая и так учтена другими источниками отпечатка.
+node_modules/expo-updates/expo-updates-gradle-plugin/**/*

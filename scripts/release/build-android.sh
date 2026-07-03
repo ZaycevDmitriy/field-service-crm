@@ -68,6 +68,12 @@ if [ "${DELIVERY}" = "ota" ]; then
 fi
 
 # 5. APK-ветвь: CNG (android/ в .gitignore) → генерируем нативный проект; env из шага выше уходят в app.config.ts.
+#    EXPO_UPDATES_FINGERPRINT_OVERRIDE: Gradle-задача createUpdatesResources пересчитывает fingerprint
+#    ВО ВРЕМЯ сборки, когда дерево уже загрязнено артефактами composite build (см. .fingerprintignore),
+#    и зашивает результат в APK (assets/fingerprint). Override заставляет её зашить РОВНО значение
+#    из шага 1 — runtimeVersion APK гарантированно совпадает с fingerprint.txt и будущими `eas update`.
+export EXPO_UPDATES_FINGERPRINT_OVERRIDE="${CURRENT}"
+
 echo "[build-android] expo prebuild (android)…"
 npx expo prebuild --platform android --no-install
 
