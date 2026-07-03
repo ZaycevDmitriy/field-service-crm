@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.2](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.1...v1.2.2) (2026-07-03)
+
+### Bug Fixes
+
+* **release:** стабилизировать runtimeVersion APK (fingerprint переставал совпадать с OTA) ([242fd55](https://github.com/ZaycevDmitriy/field-service-crm/commit/242fd5584f64f841afad9be8c534ddfdab864dde))
+
 ## [1.2.1](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.0...v1.2.1) (2026-07-03)
 
 ### Bug Fixes
