@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { type ComponentProps, type FC, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -14,6 +14,7 @@ import { OpenRouteButton } from '@/features/open-route';
 import { OrderReminderButton } from '@/features/order-reminder';
 import { useOrderStatusActions } from '@/features/order-status';
 import { Radius, Spacing, useColors } from '@/shared/config';
+import { useGuardedBack } from '@/shared/lib/navigation';
 import { Button, DiagnosticCard, ErrorState, IconSymbol, ScreenHeader, Text } from '@/shared/ui';
 
 export interface IOrderDetailsPageProps {
@@ -47,7 +48,7 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   // Дистанция — производное от текущей локации; хук терпит undefined order (вызов до early return).
   const distanceLabel = useOrderDistanceLabel(order);
 
-  const handleBack = () => router.back();
+  const handleBack = useGuardedBack();
 
   if (!order) {
     return (
@@ -64,7 +65,15 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const hasPhotos = order.photos.length > 0;
 
   const handleAddPhoto = () => {
-    router.push({ pathname: '/camera/[orderId]', params: { orderId: order.id } });
+    router.navigate({ pathname: '/camera/[orderId]', params: { orderId: order.id } });
+  };
+
+  // Подтверждение перед необратимой отменой заявки (по образцу handleClearDatabase, settings-page.tsx).
+  const handleCancelOrder = () => {
+    Alert.alert('Отменить заявку?', 'Действие нельзя будет отменить.', [
+      { text: 'Нет', style: 'cancel' },
+      { text: 'Отменить заявку', style: 'destructive', onPress: cancelOrder },
+    ]);
   };
 
   return (
@@ -197,7 +206,11 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
                 onPress={completeWork}
                 leftIcon={<IconSymbol name="checkmark" size={18} color={colors.white} />}
               />
-              <Pressable onPress={cancelOrder} accessibilityRole="button" style={styles.cancelLink}>
+              <Pressable
+                onPress={handleCancelOrder}
+                accessibilityRole="button"
+                style={styles.cancelLink}
+              >
                 <Text size="md" weight="semibold" color="dangerAccent">
                   Отменить заявку
                 </Text>

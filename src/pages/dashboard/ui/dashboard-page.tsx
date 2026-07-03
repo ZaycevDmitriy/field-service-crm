@@ -10,6 +10,7 @@ import { StatsStrip } from './stats-strip';
 import { getNearestOrder, useOrdersStore } from '@/entities/order';
 import { openMapsRoute } from '@/features/open-route';
 import { Spacing } from '@/shared/config';
+import { formatTimeUntil } from '@/shared/lib/date';
 import { useCurrentLocation } from '@/shared/lib/location';
 import { useAppStore } from '@/shared/model';
 import { Screen, Text } from '@/shared/ui';
@@ -28,12 +29,17 @@ export const DashboardPage: FC = () => {
     () => getNearestOrder(orders, currentLocation),
     [orders, currentLocation],
   );
+  // new Date() — не в render-пути списков (правило «Даты и время»), допустимо в useMemo одного hero-блока.
+  const timeUntilLabel = useMemo(
+    () => (nearestOrder ? formatTimeUntil(nearestOrder.scheduledTime) : null),
+    [nearestOrder],
+  );
 
   const handleOpenNearest = () => {
     if (!nearestOrder) {
       return;
     }
-    router.push({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
+    router.navigate({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
   };
   // Маршрут до ближайшей заявки во внешних Яндекс.Картах (работает и без разрешения геолокации).
   const handleOpenRoute = () => {
@@ -50,7 +56,7 @@ export const DashboardPage: FC = () => {
         {nearestOrder ? (
           <View style={styles.section}>
             <Text size="13" color="textSecondary" style={styles.eyebrow}>
-              Следующая заявка · через 1ч 30м
+              {timeUntilLabel ? `Следующая заявка · ${timeUntilLabel}` : 'Следующая заявка'}
             </Text>
             <NearestOrderCard
               order={nearestOrder}
