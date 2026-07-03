@@ -206,6 +206,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     } catch (error) {
       logger.error('[useOrdersStore.clearDatabase] Не удалось очистить БД.', error);
       set({ error: 'Не удалось очистить базу данных' });
+      // store.error рендерится только в OrdersListEmpty (список пуст) — при сбое очистки список
+      // остаётся непустым, поэтому ошибка дополнительно сообщается тостом.
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось очистить базу данных');
     } finally {
       set({ loading: false });
     }

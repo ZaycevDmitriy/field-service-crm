@@ -1,4 +1,5 @@
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
+import { useIsFocused } from 'expo-router';
 import { type FC, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,6 +63,7 @@ const ControlButton: FC<IControlButtonProps> = ({ icon, label, onPress, disabled
 // реактивно через useCameraPermissions; отказ не блокирует флоу (галерея и закрытие доступны).
 export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClose }) => {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>('back');
@@ -156,6 +158,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
             icon="xmark"
             accessibilityLabel="Закрыть"
             color={CAMERA.shutter}
+            disabled={isBusy}
             onPress={onClose}
           />
           <Text weight="semibold" color="white">
@@ -202,6 +205,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
             icon="xmark"
             accessibilityLabel="Закрыть"
             color={CAMERA.shutter}
+            disabled={isBusy}
             onPress={onClose}
           />
           <Text weight="semibold" color="white">
@@ -237,6 +241,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
           icon="xmark"
           accessibilityLabel="Закрыть"
           color={CAMERA.shutter}
+          disabled={isBusy}
           onPress={onClose}
         />
         <Text weight="semibold" color="white">
@@ -256,6 +261,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
         facing={facing}
         flash={flash}
         mode="picture"
+        active={isFocused}
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(event) => {
           logger.error('[PhotoCaptureView] Камера не запустилась.', event.message);
