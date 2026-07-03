@@ -3,6 +3,7 @@ import { Alert, Linking, type AlertButton } from 'react-native';
 import type { IServiceOrder } from '@/entities/order';
 import { logger } from '@/shared/lib/logger';
 import {
+  cancelOrderRemindersByKey,
   PermissionResultEnum,
   requestPermission,
   scheduleOrderReminder,
@@ -68,12 +69,17 @@ async function scheduleWithPermission(
     return;
   }
 
-  const id = await scheduleOrderReminder(toReminderContent(order), offset.seconds);
+  // Сначала ставим новое напоминание и только при успехе гасим прежние: сбой планирования не
+  // оставит пользователя без напоминания. Дедупликация stateless (по dedupKey в планировщике ОС),
+  // поэтому работает и после перезапуска приложения.
+  const id = await scheduleOrderReminder(toReminderContent(order), offset.seconds, order.id);
   if (!id) {
     Alert.alert('Не удалось', 'Не получилось запланировать напоминание. Попробуйте ещё раз.');
 
     return;
   }
+  // Fire-and-forget: отмена прежних не влияет на успех нового и не должна задерживать Alert.
+  void cancelOrderRemindersByKey(order.id, id);
 
   Alert.alert('Напоминание поставлено', `Напомним ${offset.label.toLowerCase()}.`);
 }

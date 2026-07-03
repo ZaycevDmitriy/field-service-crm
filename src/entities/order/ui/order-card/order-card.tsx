@@ -1,10 +1,10 @@
 import { type FC, memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useOrderDistanceLabel, type IServiceOrder } from '../../model';
+import { useOrderDistanceLabel, useOrderStatusColors, type IServiceOrder } from '../../model';
 import { OrderStatusBadge } from '../order-status-badge';
 
-import { Radius, Shadows, Spacing, useColors, useOrderStatusColors } from '@/shared/config';
+import { Radius, Shadows, Spacing, useColors } from '@/shared/config';
 import { IconSymbol, Text } from '@/shared/ui';
 
 export interface IOrderCardProps {

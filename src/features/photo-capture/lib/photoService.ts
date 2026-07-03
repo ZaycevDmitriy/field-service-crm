@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { requestMediaLibraryPermissionAsync } from './photoPermissionService';
 
+import { deleteFileQuietly } from '@/shared/lib/fs';
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
 
@@ -98,4 +99,15 @@ export const photoService = {
       return tempUri;
     }
   },
+};
+
+/**
+ * Удаляет файл фото из постоянного хранилища (orphan-cleanup при отмене/пересъёмке на экране
+ * предпросмотра — снимок копируется в persistPhoto ДО подтверждения пользователем). Вынесена
+ * отдельной функцией (не методом photoService): это единственная операция слайса, нужная снаружи
+ * (`pages/photo`), — остальной сервис остаётся приватной деталью реализации. Делегирует общий
+ * helper (`shared/lib/fs`): та же логика тихого удаления нужна и `orderDatabaseService.clearDatabase`.
+ */
+export const deletePhoto = (uri: string): void => {
+  deleteFileQuietly(uri);
 };

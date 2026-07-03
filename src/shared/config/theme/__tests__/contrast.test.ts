@@ -1,125 +1,17 @@
+import { darkColors, lightColors, type IColors } from '../colors';
+
 import {
-  darkColors,
-  darkOrderStatusColors,
-  lightColors,
-  lightOrderStatusColors,
-  type IColors,
-  type IOrderStatusColors,
-} from '../colors';
+  contrastRatio,
+  NON_TEXT_MIN,
+  SEPARATION_MIN,
+  TEXT_MIN,
+  type IContrastPair,
+} from './helpers/contrast';
 
-// Утилита контраста (WCAG 2.1) инлайн в тесте: единственный потребитель — этот сьют. Считает
-// относительную яркость и contrast ratio; полупрозрачные rgba-токены (в тёмной теме — *Surface,
-// статус-плашки, textSecondary/textMuted) композитятся на непрозрачную подложку перед замером,
-// иначе альфа парсилась бы как непрозрачный цвет и контраст вышел бы неверным.
-
-interface IRgba {
-  r: number;
-  g: number;
-  b: number;
-  a: number;
-}
-
-interface IRgb {
-  r: number;
-  g: number;
-  b: number;
-}
-
-// Парсит '#rrggbb' / '#rgb' / 'rgb(...)' / 'rgba(...)' в каналы 0–255 и альфу 0–1.
-function parseColor(input: string): IRgba {
-  const value = input.trim();
-  if (value.startsWith('#')) {
-    const raw = value.slice(1);
-    const hex =
-      raw.length === 3
-        ? raw
-            .split('')
-            .map((c) => c + c)
-            .join('')
-        : raw;
-
-    return {
-      r: parseInt(hex.slice(0, 2), 16),
-      g: parseInt(hex.slice(2, 4), 16),
-      b: parseInt(hex.slice(4, 6), 16),
-      a: 1,
-    };
-  }
-  const match = value.match(/^rgba?\(([^)]+)\)$/i);
-  if (!match) {
-    throw new Error(`Не удалось разобрать цвет: ${input}`);
-  }
-  const parts = match[1].split(',').map((part) => Number(part.trim()));
-
-  return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
-}
-
-// Композитит цвет с альфой поверх непрозрачной подложки (alpha-over).
-function flatten(fg: IRgba, bg: IRgb): IRgb {
-  if (fg.a >= 1) {
-    return { r: fg.r, g: fg.g, b: fg.b };
-  }
-  const { a } = fg;
-
-  return {
-    r: fg.r * a + bg.r * (1 - a),
-    g: fg.g * a + bg.g * (1 - a),
-    b: fg.b * a + bg.b * (1 - a),
-  };
-}
-
-// Линеаризация sRGB-канала (WCAG).
-function linearize(channel: number): number {
-  const s = channel / 255;
-
-  return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-}
-
-// Относительная яркость (WCAG).
-function luminance(rgb: IRgb): number {
-  return 0.2126 * linearize(rgb.r) + 0.7152 * linearize(rgb.g) + 0.0722 * linearize(rgb.b);
-}
-
-// Контраст переднего цвета на фоне. base — непрозрачная подложка под bg (нужна для полупрозрачных
-// rgba-токенов тёмной темы). По умолчанию белая.
-function contrastRatio(fg: string, bg: string, base = '#FFFFFF'): number {
-  const baseColor = parseColor(base);
-  const baseRgb: IRgb = { r: baseColor.r, g: baseColor.g, b: baseColor.b };
-  const bgRgb = flatten(parseColor(bg), baseRgb);
-  const fgRgb = flatten(parseColor(fg), bgRgb);
-  const lighter = Math.max(luminance(fgRgb), luminance(bgRgb));
-  const darker = Math.min(luminance(fgRgb), luminance(bgRgb));
-
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-// Пороги WCAG 2.1 AA: обычный текст ≥4.5, нетекстовые элементы (иконки/границы/рейлы) ≥3.
-const TEXT_MIN = 4.5;
-const NON_TEXT_MIN = 3;
-// Порог «не-слияния»: тональный филл контрола должен оставаться отделим от поверхности-контейнера.
-// Это affordance-guard (контрол не сливается с фоном), а не WCAG-порог — светлый нейтральный филл
-// строгие 3:1 не даёт; ловит регрессию вида surfaceMuted→surface (отрыв схлопывается до 1.0).
-const SEPARATION_MIN = 1.1;
-
-interface IContrastPair {
-  label: string;
-  fg: string;
-  bg: string;
-  // Непрозрачная подложка под bg (нужна для полупрозрачных rgba-токенов тёмной темы).
-  base?: string;
-  min: number;
-}
-
-// Полная матрица контрастных пар для одной темы (значения берутся из реальных токенов).
-function buildPairs(c: IColors, status: IOrderStatusColors): IContrastPair[] {
-  const statusPairs = (Object.keys(status) as (keyof IOrderStatusColors)[]).map((key) => ({
-    label: `status ${key} text / plate`,
-    fg: status[key].text,
-    bg: status[key].background,
-    base: c.surface,
-    min: TEXT_MIN,
-  }));
-
+// Полная матрица контрастных пар для одной темы (значения берутся из реальных токенов IColors).
+// Контраст статусных токенов заявки (IOrderStatusColors) — отдельный сьют в entities/order/model
+// (shared не может импортировать entities).
+function buildPairs(c: IColors): IContrastPair[] {
   return [
     // White-safe заливки кнопок (белый текст на заливке).
     { label: 'white / primary (btn fill)', fg: c.white, bg: c.primary, min: TEXT_MIN },
@@ -202,23 +94,22 @@ function buildPairs(c: IColors, status: IOrderStatusColors): IContrastPair[] {
       bg: c.surface,
       min: SEPARATION_MIN,
     },
-    ...statusPairs,
   ];
 }
 
 // Регистрирует it-проверки матрицы внутри текущего describe-блока темы.
-function runMatrix(colors: IColors, status: IOrderStatusColors): void {
-  it.each(buildPairs(colors, status))('$label ≥ $min', (pair) => {
+function runMatrix(colors: IColors): void {
+  it.each(buildPairs(colors))('$label ≥ $min', (pair) => {
     expect(contrastRatio(pair.fg, pair.bg, pair.base)).toBeGreaterThanOrEqual(pair.min);
   });
 }
 
 describe('Контраст токенов темы (WCAG AA)', () => {
   describe('light', () => {
-    runMatrix(lightColors, lightOrderStatusColors);
+    runMatrix(lightColors);
   });
   describe('dark', () => {
-    runMatrix(darkColors, darkOrderStatusColors);
+    runMatrix(darkColors);
   });
 
   it('photo-ghost (фикс-цвет CAMERA, theme-independent) ≥ 4.5 на тёмном фоне', () => {

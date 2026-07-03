@@ -4,27 +4,21 @@ import { StyleSheet, View } from 'react-native';
 import { OrderStatusFilter } from '@/features/order-filter';
 import { OrderSearch } from '@/features/order-search';
 import { Spacing } from '@/shared/config';
-import { useAppStore } from '@/shared/model';
-import { OfflineBanner, Text } from '@/shared/ui';
+import { Text } from '@/shared/ui';
 
 // Закреплённая шапка экрана «Заявки»: заголовок, поиск и фильтр статусов. Рендерится отдельным
 // элементом над FlashList (вне прокрутки списка), поэтому не уезжает при скролле карточек. Поиск
-// и фильтр самоподписаны на стор; шапка зависит только от offline и обёрнута в memo — ввод в
+// и фильтр самоподписаны на стор; шапка не зависит от пропсов/стора и обёрнута в memo — ввод в
 // поиске её не ререндерит, перерисовывается только сам инпут (свод §4.1/§4.9).
-const OrdersListHeaderView: FC = () => {
-  const offline = useAppStore((state) => state.offline);
-
-  return (
-    <View style={styles.header}>
-      <Text size="xl" weight="bold">
-        Заявки
-      </Text>
-      <OrderSearch />
-      <OrderStatusFilter />
-      {offline ? <OfflineBanner /> : null}
-    </View>
-  );
-};
+const OrdersListHeaderView: FC = () => (
+  <View style={styles.header}>
+    <Text size="xl" weight="bold">
+      Заявки
+    </Text>
+    <OrderSearch />
+    <OrderStatusFilter />
+  </View>
+);
 
 export const OrdersListHeader = memo(OrdersListHeaderView);
 
