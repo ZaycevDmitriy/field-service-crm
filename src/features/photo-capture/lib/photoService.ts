@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { requestMediaLibraryPermissionAsync } from './photoPermissionService';
 
-import { deleteFileQuietly } from '@/shared/lib/fs';
+import { deleteFileQuietly, listDirectoryQuietly } from '@/shared/lib/fs';
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
 
@@ -110,4 +110,26 @@ export const photoService = {
  */
 export const deletePhoto = (uri: string): void => {
   deleteFileQuietly(uri);
+};
+
+/**
+ * Удаляет из постоянного хранилища (`Paths.document/photos`) файлы, которых нет среди `knownUris`
+ * (все URI фото из гидрированного стора). Сравнение — по имени файла (в БД хранится относительный
+ * путь, знакомые URI — абсолютные); `mock://`-URI сидовых данных под сравнение не попадают — их
+ * "имя файла" никогда не совпадёт с реальным именем на диске, поэтому просто не влияют на sweep.
+ * Вызывать один раз при старте, ПОСЛЕ гидрации стора и ДО открытия экрана съёмки — иначе можно
+ * снести ещё не сохранённый (не подтверждённый) снимок из активного флоу камеры.
+ */
+export const sweepOrphanPhotos = (knownUris: string[]): void => {
+  const knownNames = new Set(knownUris.map((uri) => uri.split('/').pop()));
+  const directory = new Directory(Paths.document, PHOTOS_DIRECTORY);
+  const orphanNames = listDirectoryQuietly(directory).filter((name) => !knownNames.has(name));
+
+  orphanNames.forEach((name) => deleteFileQuietly(new File(directory, name).uri));
+
+  if (orphanNames.length > 0) {
+    logger.info(
+      `[photoService.sweepOrphanPhotos] Удалено осиротевших фото: ${orphanNames.length}.`,
+    );
+  }
 };

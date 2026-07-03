@@ -14,6 +14,7 @@ import {
 import { MOCK_SERVICE_ORDERS } from '@/entities/order/model/mock';
 import { ServiceOrderStatusEnum } from '@/entities/order/model/order-status';
 import { getDatabase } from '@/shared/lib/db';
+import { logger } from '@/shared/lib/logger';
 
 const DOCUMENT_URI = 'file:///mock-document/';
 
@@ -117,6 +118,28 @@ describe('rowToPhoto / rowToOrder', () => {
       longitude: 37.61,
       photos: [{ id: 'photo-1' }],
     });
+  });
+
+  it('rowToOrder: невалидный статус (повреждённая строка) → фоллбэк на New + logger.warn (M4)', () => {
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const row: IServiceOrderRow = {
+      id: 'order-1',
+      status: 'Unknown',
+      title: 'Заявка',
+      client: 'Клиент',
+      address: 'Адрес',
+      description: 'Описание',
+      scheduled_time: SCHEDULED_TIME,
+      scheduled_slot: SCHEDULED_SLOT,
+      latitude: 55.75,
+      longitude: 37.61,
+    };
+
+    expect(rowToOrder(row, []).status).toBe(ServiceOrderStatusEnum.New);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Невалидный статус'),
+      expect.anything(),
+    );
   });
 });
 
