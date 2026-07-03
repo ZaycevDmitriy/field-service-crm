@@ -61,6 +61,24 @@ else
 fi
 echo "${DELIVERY}" > dist/.delivery
 
+# 3.1 APK-guard (H4, аудит 2026-07-02): fingerprint совпал → маршрут OTA, но если у релиза-источника
+#     этого fingerprint (PREV) по факту НЕТ залитого APK-ассета (прошлая доставка сорвалась после
+#     необратимых шагов — тег/Release/fingerprint.txt уже созданы, а publishCmd упал), то ни у одного
+#     установленного билда нет этого runtimeVersion — OTA под него публиковать некуда. Разворачиваем
+#     маршрут на APK, чтобы у fingerprint появился хотя бы один реальный носитель.
+if [ "${DELIVERY}" = "ota" ]; then
+  echo "[build-android] APK-guard: проверяю наличие APK-ассета у релиза-источника fingerprint…"
+  PREV_TAG="$(gh release view --json tagName --jq '.tagName' --repo "${GITHUB_REPOSITORY:-}" 2>/dev/null || true)"
+  if gh release view --json assets --jq '.assets[].name' --repo "${GITHUB_REPOSITORY:-}" 2>/dev/null \
+    | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.exit(d.split('\n').some((n)=>n.endsWith('.apk'))?0:1))"; then
+    echo "[build-android] APK-ассет у релиза-источника (${PREV_TAG:-<неизвестен>}) найден → OTA остаётся."
+  else
+    DELIVERY="apk"
+    echo "${DELIVERY}" > dist/.delivery
+    echo "::warning::[build-android] APK-guard: у релиза-источника fingerprint (${PREV_TAG:-<неизвестен>}) нет APK-ассета (прошлая доставка сорвалась?) → DELIVERY=apk."
+  fi
+fi
+
 # 4. OTA-ветвь: APK не собираем. eas update вычислит тот же runtimeVersion на чистом дереве.
 if [ "${DELIVERY}" = "ota" ]; then
   echo "[build-android] DONE (OTA): сборка APK пропущена; ${FINGERPRINT_FILE} приложится к релизу."

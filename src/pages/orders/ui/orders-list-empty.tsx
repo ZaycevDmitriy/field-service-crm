@@ -13,12 +13,20 @@ export const OrdersListEmpty: FC = () => {
   const error = useOrdersStore((state) => state.error);
   const ordersCount = useOrdersStore((state) => state.orders.length);
   const loadOrders = useOrdersStore((state) => state.loadOrders);
+  const initialize = useOrdersStore((state) => state.initialize);
 
   // Стабильный по ссылке колбэк: компонент подписан на стор несколькими селекторами и ререндерится
-  // при смене loading/error/orders; loadOrders — стабильный экшен Zustand.
+  // при смене loading/error/orders; loadOrders/initialize — стабильные экшены Zustand.
   const handleRefresh = useCallback(() => {
     loadOrders();
   }, [loadOrders]);
+
+  // Retry после ошибки зовёт initialize, а не loadOrders: ошибка на этом экране чаще всего —
+  // несбойная миграция/инициализация БД (H1), а idempotent initDatabase её доводит до конца;
+  // loadOrders лишь читает уже (возможно, недомигрированную) схему и ничего не чинит.
+  const handleRetryAfterError = useCallback(() => {
+    initialize();
+  }, [initialize]);
 
   // Начальная загрузка (заявок ещё нет) — скелетоны. При pull-to-refresh `orders` непуст → список
   // остаётся, сюда не попадаем (без мигания скелетоном).
@@ -32,7 +40,7 @@ export const OrdersListEmpty: FC = () => {
         title="Не удалось загрузить заявки"
         description="Проверьте подключение и попробуйте снова."
         actionLabel="Повторить"
-        onRetry={handleRefresh}
+        onRetry={handleRetryAfterError}
       />
     );
   }

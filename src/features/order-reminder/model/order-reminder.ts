@@ -1,4 +1,4 @@
-import { Alert, Linking, type AlertButton } from 'react-native';
+import { Alert, Linking, Platform, type AlertButton } from 'react-native';
 
 import type { IServiceOrder } from '@/entities/order';
 import { logger } from '@/shared/lib/logger';
@@ -90,14 +90,27 @@ async function scheduleWithPermission(
  * UI лишь дёргает эту функцию по нажатию.
  */
 export function promptOrderReminder(order: IServiceOrder): void {
-  const buttons: AlertButton[] = [
-    ...REMINDER_OFFSETS.map((offset) => ({
-      text: offset.label,
-      onPress: () => {
-        void scheduleWithPermission(order, offset);
-      },
-    })),
-    { text: 'Отмена', style: 'cancel' },
-  ];
-  Alert.alert('Когда напомнить?', order.title, buttons);
+  const presetButtons: AlertButton[] = REMINDER_OFFSETS.map((offset) => ({
+    text: offset.label,
+    onPress: () => {
+      void scheduleWithPermission(order, offset);
+    },
+  }));
+
+  // Android: RN обрезает Alert.alert до 3 кнопок (buttons.slice(0, 3)), поэтому при 3 пресетах +
+  // «Отмена» четвёртая кнопка отбрасывается, а `cancelable` по умолчанию false — диалог с 4 кнопками
+  // невозможно закрыть ни тапом мимо, ни «Назад». Показываем только 3 пресета и явно включаем
+  // cancelable/onDismiss (Android-only опции AlertOptions). iOS лимита кнопок не имеет — оставляем
+  // «Отмена» четвёртой кнопкой, как раньше.
+  const buttons: AlertButton[] = Platform.select({
+    android: presetButtons,
+    default: [...presetButtons, { text: 'Отмена', style: 'cancel' }],
+  });
+
+  Alert.alert('Когда напомнить?', order.title, buttons, {
+    cancelable: true,
+    onDismiss: () => {
+      logger.debug('[promptOrderReminder] Диалог закрыт без выбора пресета.');
+    },
+  });
 }

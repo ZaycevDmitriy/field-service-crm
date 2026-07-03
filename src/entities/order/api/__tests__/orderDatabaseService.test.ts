@@ -55,6 +55,8 @@ const MOCK_SCHEME_URI = 'mock://order-2-photo-1.jpg';
 const EXTERNAL_HTTPS_URI = 'https://example.com/photo.jpg';
 const SCHEDULED_TIME = '09:00';
 const SCHEDULED_SLOT = '09:00 — 10:00';
+const ADD_COLUMN_LATITUDE = 'ADD COLUMN latitude';
+const ADD_COLUMN_LONGITUDE = 'ADD COLUMN longitude';
 
 describe('toStoredUri / toRuntimeUri', () => {
   it('конвертирует абсолютный document-URI в относительный путь и обратно (round-trip)', () => {
@@ -122,25 +124,65 @@ describe('migrateOrdersSchema', () => {
   const makeMockDatabase = (columns: string[]) => ({
     getAllAsync: jest.fn().mockResolvedValue(columns.map((name) => ({ name }))),
     execAsync: jest.fn().mockResolvedValue(undefined),
-    runAsync: jest.fn().mockResolvedValue(undefined),
+    runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
   });
 
-  it('идемпотентна: latitude уже есть, distance_label отсутствует → ничего не меняет', async () => {
+  it('полный повтор: обе координаты уже есть, distance_label отсутствует → ALTER/DROP не вызываются, backfill идёт безусловно (no-op по SQL-guard latitude IS NULL)', async () => {
     const database = makeMockDatabase(['id', 'status', 'latitude', 'longitude']);
 
     await migrateOrdersSchema(database as unknown as SQLiteDatabase);
 
     expect(database.execAsync).not.toHaveBeenCalled();
-    expect(database.runAsync).not.toHaveBeenCalled();
+    expect(database.runAsync).toHaveBeenCalledTimes(MOCK_SERVICE_ORDERS.length);
   });
 
-  it('добавляет latitude/longitude и бэкафиллит координаты из MOCK_SERVICE_ORDERS, когда колонок нет', async () => {
+  it('добавляет latitude/longitude отдельными ALTER и бэкафиллит координаты из MOCK_SERVICE_ORDERS, когда колонок нет', async () => {
     const database = makeMockDatabase(['id', 'status']);
 
     await migrateOrdersSchema(database as unknown as SQLiteDatabase);
 
-    expect(database.execAsync).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN latitude'));
+    expect(database.execAsync).toHaveBeenCalledTimes(2);
+    expect(database.execAsync).toHaveBeenCalledWith(expect.stringContaining(ADD_COLUMN_LATITUDE));
+    expect(database.execAsync).toHaveBeenCalledWith(expect.stringContaining(ADD_COLUMN_LONGITUDE));
     expect(database.runAsync).toHaveBeenCalledTimes(MOCK_SERVICE_ORDERS.length);
+  });
+
+  it('частичное состояние (прерванный прошлый прогон): latitude есть, longitude нет → добавляет только longitude', async () => {
+    const database = makeMockDatabase(['id', 'status', 'latitude']);
+
+    await migrateOrdersSchema(database as unknown as SQLiteDatabase);
+
+    expect(database.execAsync).toHaveBeenCalledTimes(1);
+    expect(database.execAsync).toHaveBeenCalledWith(expect.stringContaining(ADD_COLUMN_LONGITUDE));
+    expect(database.execAsync).not.toHaveBeenCalledWith(
+      expect.stringContaining(ADD_COLUMN_LATITUDE),
+    );
+  });
+
+  it('частичное состояние: longitude есть, latitude нет → добавляет только latitude', async () => {
+    const database = makeMockDatabase(['id', 'status', 'longitude']);
+
+    await migrateOrdersSchema(database as unknown as SQLiteDatabase);
+
+    expect(database.execAsync).toHaveBeenCalledTimes(1);
+    expect(database.execAsync).toHaveBeenCalledWith(expect.stringContaining(ADD_COLUMN_LATITUDE));
+    expect(database.execAsync).not.toHaveBeenCalledWith(
+      expect.stringContaining(ADD_COLUMN_LONGITUDE),
+    );
+  });
+
+  it('обе колонки уже есть, но координаты NULL → backfill повторяется безусловно (не зависит от результата ALTER)', async () => {
+    const database = makeMockDatabase(['id', 'status', 'latitude', 'longitude']);
+
+    await migrateOrdersSchema(database as unknown as SQLiteDatabase);
+
+    expect(database.runAsync).toHaveBeenCalledTimes(MOCK_SERVICE_ORDERS.length);
+    expect(database.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE id = ? AND latitude IS NULL'),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('удаляет distance_label, когда колонка присутствует', async () => {
@@ -161,6 +203,50 @@ interface IMockGetOrdersDatabase {
   getFirstAsync: jest.Mock;
   withExclusiveTransactionAsync: jest.Mock;
 }
+
+describe('orderDatabaseService.initDatabase', () => {
+  // Тот же самореференсный паттерн, что в getOrders: withExclusiveTransactionAsync вызывает
+  // колбэк с тем же mock-объектом (txn === database), поэтому execAsync/getAllAsync внутри
+  // миграции и снаружи (SCHEMA_SQL) считаются одним и тем же jest.fn().
+  const mockDatabase: IMockGetOrdersDatabase = {
+    execAsync: jest.fn().mockResolvedValue(undefined),
+    runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+    getAllAsync: jest.fn(),
+    getFirstAsync: jest.fn(),
+    withExclusiveTransactionAsync: jest.fn(async (task: (txn: unknown) => Promise<void>) =>
+      task(mockDatabase),
+    ),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDatabase.execAsync.mockResolvedValue(undefined);
+    mockDatabase.runAsync.mockResolvedValue({ changes: 1 });
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('версия схемы устарела → миграция и PRAGMA user_version выполняются внутри withExclusiveTransactionAsync (через txn)', async () => {
+    mockDatabase.getFirstAsync.mockResolvedValueOnce({ user_version: 1 });
+    mockDatabase.getAllAsync.mockResolvedValueOnce(
+      ['id', 'status', 'latitude', 'longitude'].map((name) => ({ name })),
+    );
+
+    await orderDatabaseService.initDatabase();
+
+    expect(mockDatabase.withExclusiveTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(mockDatabase.execAsync).toHaveBeenCalledWith(
+      expect.stringContaining('PRAGMA user_version = 2'),
+    );
+  });
+
+  it('версия схемы актуальна → withExclusiveTransactionAsync не вызывается (нет лишней транзакции)', async () => {
+    mockDatabase.getFirstAsync.mockResolvedValueOnce({ user_version: 2 });
+
+    await orderDatabaseService.initDatabase();
+
+    expect(mockDatabase.withExclusiveTransactionAsync).not.toHaveBeenCalled();
+  });
+});
 
 describe('orderDatabaseService.getOrders', () => {
   // Явная аннотация типа: колбэк withExclusiveTransactionAsync замыкает mockDatabase на себя же

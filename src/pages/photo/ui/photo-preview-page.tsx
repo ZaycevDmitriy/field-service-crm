@@ -43,6 +43,12 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
   const handleBack = () => router.back();
 
   const handleSave = (comment: string) => {
+    // Guard двойного тапа: PhotoPreview блокирует свою кнопку по локальному saving-стейту, но за
+    // ~300 мс анимации dismissTo (ниже) второй onPress может успеть долететь раньше ре-рендера —
+    // без этой проверки addOrderPhoto/router.dismissTo отработали бы дважды и создали дубль фото.
+    if (savedRef.current) {
+      return;
+    }
     savedRef.current = true;
     // Доменную сборку фото (id/createdAt) делает стор; здесь — только привязка к заявке.
     addOrderPhoto(orderId, { uri, comment });
