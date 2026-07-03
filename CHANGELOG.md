@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.0...v1.2.1) (2026-07-03)
+
+### Bug Fixes
+
+* **app-updates:** сообщать об ошибке reloadApp в dev вместо no-op ([9ab53c7](https://github.com/ZaycevDmitriy/field-service-crm/commit/9ab53c7d724c94736faa99af60dcda6d5f2b686e))
+* **misc:** таймаут геолокации, дедуп напоминаний, транзакция БД и мёртвый код ([60501cf](https://github.com/ZaycevDmitriy/field-service-crm/commit/60501cf748a560813754e778b935a5bc5895c8ac))
+* **misc:** утечка таймера геолокации, атомарность замены напоминания, узкий экспорт photoService ([6cd1476](https://github.com/ZaycevDmitriy/field-service-crm/commit/6cd1476805bde043920db219962966b9c6e8c7ac))
+* **orders:** устранить потерю данных и гонку при очистке БД, утечку фото ([80e35da](https://github.com/ZaycevDmitriy/field-service-crm/commit/80e35da1da4c3bd085c6afe1a05dc61fd10c9d2c))
+* **order:** изоляция транзакции чтения, порядок очистки БД, stateless-дедуп напоминаний ([8db7410](https://github.com/ZaycevDmitriy/field-service-crm/commit/8db74103ff5d00e57f758a90af1c1e86fb7ac635)), closes [#36](https://github.com/ZaycevDmitriy/field-service-crm/issues/36)
+* **theme:** привести цветовые токены к WCAG AA ([f6349dc](https://github.com/ZaycevDmitriy/field-service-crm/commit/f6349dcfb9c944e3bc10945255bf8bc47e63b154))
+* **ui:** tinted-бейджи и accent-маршрутизация по роли ([48cbd99](https://github.com/ZaycevDmitriy/field-service-crm/commit/48cbd99111fc3cc0e5a387c4868dd08254297983))
+* **ui:** отделить secondary-кнопку от карточки тональным филлом ([c962117](https://github.com/ZaycevDmitriy/field-service-crm/commit/c962117c43468ee70e60e8e3d9b6a71400dc8103))
+
 ## [1.2.0](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.1.0...v1.2.0) (2026-06-29)
 
 ### Features
