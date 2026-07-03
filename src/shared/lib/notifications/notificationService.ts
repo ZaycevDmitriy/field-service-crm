@@ -97,19 +97,23 @@ export async function requestPermission(): Promise<PermissionResultEnum> {
 }
 
 /**
- * Планирует локальное напоминание через `seconds` секунд (TIME_INTERVAL). Возвращает id уведомления
- * или null при сбое (graceful — не бросает). channelId привязывает уведомление к Android-каналу
- * order-reminders (на iOS поле игнорируется).
+ * Планирует локальное напоминание через `seconds` секунд (TIME_INTERVAL). `dedupKey` кладётся в
+ * `content.data` — по нему `cancelOrderRemindersByKey` находит и гасит предыдущие напоминания того же
+ * получателя (сегмент business-agnostic, поэтому ключ называется `dedupKey`, а не `orderId`).
+ * Возвращает id уведомления или null при сбое (graceful — не бросает). channelId привязывает
+ * уведомление к Android-каналу order-reminders (на iOS поле игнорируется).
  */
 export async function scheduleOrderReminder(
   content: IReminderContent,
   seconds: number,
+  dedupKey: string,
 ): Promise<string | null> {
   try {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: content.title,
         body: content.body,
+        data: { dedupKey },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -131,15 +135,56 @@ export async function scheduleOrderReminder(
 
 /**
  * Отменяет ранее запланированное напоминание по id (graceful — сбой не бросает, только логирует).
- * Используется для дедупликации: новое напоминание по заявке отменяет предыдущее перед планированием.
  */
-export async function cancelOrderReminder(id: string): Promise<void> {
+async function cancelOrderReminder(id: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(id);
     logger.info(`[notificationService.cancelOrderReminder] Напоминание ${id} отменено.`);
   } catch (error) {
     logger.error(
       '[notificationService.cancelOrderReminder] Не удалось отменить напоминание.',
+      error,
+    );
+  }
+}
+
+/**
+ * Отменяет все запланированные напоминания с данным dedupKey, кроме exceptId. Stateless: источник
+ * истины — планировщик ОС (getAllScheduledNotificationsAsync), поэтому дедупликация переживает
+ * перезапуск приложения (в отличие от in-memory реестра). Сбой чтения расписания не бросает —
+ * только логирует, чтобы не ронять флоу планирования нового напоминания.
+ */
+export async function cancelOrderRemindersByKey(
+  dedupKey: string,
+  exceptId?: string,
+): Promise<void> {
+  try {
+    const requests = await Notifications.getAllScheduledNotificationsAsync();
+    const toCancel = requests.filter((request) => {
+      const data = request.content.data as Record<string, unknown> | null;
+
+      return data?.dedupKey === dedupKey && request.identifier !== exceptId;
+    });
+    await Promise.all(toCancel.map((request) => cancelOrderReminder(request.identifier)));
+  } catch (error) {
+    logger.error(
+      '[notificationService.cancelOrderRemindersByKey] Не удалось прочитать расписание.',
+      error,
+    );
+  }
+}
+
+/**
+ * Отменяет все запланированные уведомления приложения (в приложении планируются только напоминания
+ * по заявкам). Используется при очистке локальных данных.
+ */
+export async function cancelAllReminders(): Promise<void> {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    logger.info('[notificationService.cancelAllReminders] Все напоминания отменены.');
+  } catch (error) {
+    logger.error(
+      '[notificationService.cancelAllReminders] Не удалось отменить напоминания.',
       error,
     );
   }

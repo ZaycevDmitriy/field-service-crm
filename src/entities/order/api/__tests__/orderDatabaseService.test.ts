@@ -15,10 +15,12 @@ import { MOCK_SERVICE_ORDERS } from '@/entities/order/model/mock';
 import { ServiceOrderStatusEnum } from '@/entities/order/model/order-status';
 import { getDatabase } from '@/shared/lib/db';
 
-// Тот же относительный путь, что захардкожен в фабрике jest.mock ниже (DOCUMENT_URI), — для assert-ов.
-// Дублирование намеренное: фабрика jest.mock хостится babel-jest над импортами/const, поэтому не может
-// замыкать внешние переменные без префикса `mock` (см. конвенцию в updateService.test.ts).
 const DOCUMENT_URI = 'file:///mock-document/';
+
+// URI, для которых был сконструирован File (см. clearDatabase-тесты: mock://-URI File создавать не должен).
+const mockFileConstructorCalls: string[] = [];
+// Порядок вызовов execAsync/File.delete — для проверки, что clearDatabase удаляет строки БД раньше файлов.
+const mockCallOrder: string[] = [];
 
 // Минимальный мок expo-file-system: эмулирует File/Paths настолько, чтобы toStoredUri/toRuntimeUri
 // и clearDatabase работали с предсказуемым document-каталогом без реального ФС/нативного моста.
@@ -29,10 +31,12 @@ jest.mock('expo-file-system', () => {
 
     constructor(...args: [{ uri: string }, string] | [string]) {
       this.uri = args.length === 2 ? `${args[0].uri}${args[1]}` : args[0];
+      mockFileConstructorCalls.push(this.uri);
     }
 
     delete(): void {
       this.exists = false;
+      mockCallOrder.push(`delete:${this.uri}`);
     }
   }
 
@@ -150,13 +154,25 @@ describe('migrateOrdersSchema', () => {
   });
 });
 
+interface IMockGetOrdersDatabase {
+  execAsync: jest.Mock;
+  runAsync: jest.Mock;
+  getAllAsync: jest.Mock;
+  getFirstAsync: jest.Mock;
+  withExclusiveTransactionAsync: jest.Mock;
+}
+
 describe('orderDatabaseService.getOrders', () => {
-  const mockDatabase = {
+  // Явная аннотация типа: колбэк withExclusiveTransactionAsync замыкает mockDatabase на себя же
+  // (txn — тот же объект, что и database), без типа TS не выводит тип в самореференсной инициализации.
+  const mockDatabase: IMockGetOrdersDatabase = {
     execAsync: jest.fn(),
     runAsync: jest.fn(),
     getAllAsync: jest.fn(),
     getFirstAsync: jest.fn(),
-    withTransactionAsync: jest.fn(async (task: () => Promise<void>) => task()),
+    withExclusiveTransactionAsync: jest.fn(async (task: (txn: unknown) => Promise<void>) =>
+      task(mockDatabase),
+    ),
   };
 
   beforeEach(() => {
@@ -214,5 +230,45 @@ describe('orderDatabaseService.getOrders', () => {
     const orders = await orderDatabaseService.getOrders();
 
     expect(orders[0].photos).toEqual([]);
+  });
+});
+
+describe('orderDatabaseService.clearDatabase', () => {
+  const mockDatabase = {
+    getAllAsync: jest.fn(),
+    execAsync: jest.fn(async () => {
+      mockCallOrder.push('execAsync');
+    }),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFileConstructorCalls.length = 0;
+    mockCallOrder.length = 0;
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('удаляет строки (DELETE) раньше файлов фото на диске', async () => {
+    mockDatabase.getAllAsync.mockResolvedValueOnce([{ uri: 'photos/photo-1.jpg' }]);
+
+    await orderDatabaseService.clearDatabase();
+
+    expect(mockCallOrder).toEqual(['execAsync', `delete:${DOCUMENT_URI}photos/photo-1.jpg`]);
+  });
+
+  it('для mock://-URI сид-фото File не конструируется (нет исключений/ложных логов)', async () => {
+    mockDatabase.getAllAsync.mockResolvedValueOnce([{ uri: MOCK_SCHEME_URI }]);
+
+    await orderDatabaseService.clearDatabase();
+
+    expect(mockFileConstructorCalls).toHaveLength(0);
+  });
+
+  it('удаляет file://-URI фото на диске', async () => {
+    mockDatabase.getAllAsync.mockResolvedValueOnce([{ uri: 'photos/photo-2.jpg' }]);
+
+    await orderDatabaseService.clearDatabase();
+
+    expect(mockCallOrder).toContain(`delete:${DOCUMENT_URI}photos/photo-2.jpg`);
   });
 });

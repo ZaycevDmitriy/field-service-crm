@@ -3,6 +3,8 @@ import { ServiceOrderStatusEnum } from '../order-status';
 import type { IServiceOrder } from '../types';
 import { useOrdersStore } from '../useOrdersStore';
 
+import { ToastVariantEnum, useToastStore } from '@/shared/model';
+
 // Изолируем стор от SQLite: orderDatabaseService — единственная сторонняя зависимость guard-ов
 // и переходов статуса, которые тестируются здесь.
 jest.mock('../../api', () => ({
@@ -212,6 +214,16 @@ describe('useOrdersStore', () => {
       await first;
 
       expect(mockedService.clearDatabase).toHaveBeenCalledTimes(1);
+    });
+
+    it('guard: вызов при loading=true не зовёт сервис и показывает тост вместо молчаливого no-op', async () => {
+      useOrdersStore.setState({ loading: true });
+      useToastStore.setState({ toasts: [] });
+
+      await useOrdersStore.getState().clearDatabase();
+
+      expect(mockedService.clearDatabase).not.toHaveBeenCalled();
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Info }]);
     });
   });
 });

@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { requestMediaLibraryPermissionAsync } from './photoPermissionService';
 
+import { deleteFileQuietly } from '@/shared/lib/fs';
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
 
@@ -104,16 +105,9 @@ export const photoService = {
  * Удаляет файл фото из постоянного хранилища (orphan-cleanup при отмене/пересъёмке на экране
  * предпросмотра — снимок копируется в persistPhoto ДО подтверждения пользователем). Вынесена
  * отдельной функцией (не методом photoService): это единственная операция слайса, нужная снаружи
- * (`pages/photo`), — остальной сервис остаётся приватной деталью реализации. Тихо игнорирует ошибку:
- * файл может уже отсутствовать, флоу это не блокирует.
+ * (`pages/photo`), — остальной сервис остаётся приватной деталью реализации. Делегирует общий
+ * helper (`shared/lib/fs`): та же логика тихого удаления нужна и `orderDatabaseService.clearDatabase`.
  */
-export const deletePhoto = async (uri: string): Promise<void> => {
-  try {
-    const file = new File(uri);
-    if (file.exists) {
-      file.delete();
-    }
-  } catch (error) {
-    logger.error('[deletePhoto] Не удалось удалить файл фото.', error);
-  }
+export const deletePhoto = (uri: string): void => {
+  deleteFileQuietly(uri);
 };

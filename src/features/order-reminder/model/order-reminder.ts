@@ -3,19 +3,13 @@ import { Alert, Linking, type AlertButton } from 'react-native';
 import type { IServiceOrder } from '@/entities/order';
 import { logger } from '@/shared/lib/logger';
 import {
-  cancelOrderReminder,
+  cancelOrderRemindersByKey,
   PermissionResultEnum,
   requestPermission,
   scheduleOrderReminder,
   type IReminderContent,
 } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
-
-// Id последнего запланированного напоминания по заявке (orderId → notificationId) — для
-// дедупликации: повторное подтверждение пресета заменяет предыдущее напоминание (новое планируется,
-// затем гасится старое). In-memory на время сессии приложения; переживание перезапуска требует
-// персистентности reminder-id в БД — отдельная фича расширения схемы, не точечный фикс (не делаем без явного запроса).
-const scheduledReminderIds = new Map<string, string>();
 
 // Пресет-офсеты напоминания. У заявки нет реального поля даты визита (только строки scheduledTime/
 // scheduledSlot), поэтому напоминание ставится относительным интервалом (TIME_INTERVAL), а не на дату
@@ -75,22 +69,17 @@ async function scheduleWithPermission(
     return;
   }
 
-  // Сначала ставим новое напоминание и только при успехе гасим прежнее: сбой планирования тогда не
-  // оставит пользователя вообще без напоминания (атомарная замена, а не cancel-перед-подтверждением).
-  const id = await scheduleOrderReminder(toReminderContent(order), offset.seconds);
+  // Сначала ставим новое напоминание и только при успехе гасим прежние: сбой планирования не
+  // оставит пользователя без напоминания. Дедупликация stateless (по dedupKey в планировщике ОС),
+  // поэтому работает и после перезапуска приложения.
+  const id = await scheduleOrderReminder(toReminderContent(order), offset.seconds, order.id);
   if (!id) {
     Alert.alert('Не удалось', 'Не получилось запланировать напоминание. Попробуйте ещё раз.');
 
     return;
   }
-
-  // Дедупликация: отменяем предыдущее напоминание заявки (если было), иначе повторный пресет копит
-  // дубликаты. Старое уже неактуально — новое успешно встало.
-  const existingId = scheduledReminderIds.get(order.id);
-  if (existingId) {
-    await cancelOrderReminder(existingId);
-  }
-  scheduledReminderIds.set(order.id, id);
+  // Fire-and-forget: отмена прежних не влияет на успех нового и не должна задерживать Alert.
+  void cancelOrderRemindersByKey(order.id, id);
 
   Alert.alert('Напоминание поставлено', `Напомним ${offset.label.toLowerCase()}.`);
 }

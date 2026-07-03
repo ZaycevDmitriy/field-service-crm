@@ -6,6 +6,7 @@ import { ServiceOrderStatusEnum } from '../model/order-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
+import { deleteFileQuietly } from '@/shared/lib/fs';
 import { logger } from '@/shared/lib/logger';
 
 // Database-сервис заявок — деталь реализации слайса (наружу через публичный API не выносится).
@@ -276,15 +277,18 @@ export const orderDatabaseService = {
   },
 
   // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS). Оба SELECT —
-  // в одной транзакции (согласованный снимок при параллельной записи, напр. addOrderPhoto).
+  // в withExclusiveTransactionAsync: `withTransactionAsync` не изолирует — конкурентные запросы
+  // того же соединения включаются в открытую транзакцию и откатываются вместе с ней (например,
+  // fire-and-forget записи стора persistStatus/addOrderPhoto), эксклюзивная транзакция выполняется
+  // на отдельном соединении. На web не поддерживается — SQLite-слой проекта и так native-only.
   async getOrders(): Promise<IServiceOrder[]> {
     const database = await getDatabase();
     let orderRows: IServiceOrderRow[] = [];
     let photoRows: IServiceOrderPhotoRow[] = [];
 
-    await database.withTransactionAsync(async () => {
-      orderRows = await database.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
-      photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      orderRows = await txn.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
+      photoRows = await txn.getAllAsync<IServiceOrderPhotoRow>(
         'SELECT * FROM service_order_photos',
       );
     });
@@ -333,27 +337,19 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
-  // Полностью очищает обе таблицы и физические файлы фото на диске. Файлы удаляются ДО DELETE
-  // (пока относительные пути ещё доступны в таблице); сбой удаления отдельного файла не прерывает
-  // очистку БД. Фото-строки удаляются раньше заявок из-за внешнего ключа.
+  // Полностью очищает обе таблицы и физические файлы фото на диске. URI читаются в память заранее,
+  // поэтому строки удаляются ДО файлов — при сбое DELETE файлы остаются на месте и записи в БД не
+  // бьются; mock://-URI сид-фото `deleteFileQuietly` пропускает молча. `File.exists`/`delete`
+  // синхронные — параллелизм (Promise.all) не нужен, поэтому цикл for..of.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
     const photoRows = await database.getAllAsync<{ uri: string }>(
       'SELECT uri FROM service_order_photos',
     );
-    await Promise.all(
-      photoRows.map(async ({ uri }) => {
-        try {
-          const file = new File(toRuntimeUri(uri));
-          if (file.exists) {
-            file.delete();
-          }
-        } catch (error) {
-          logger.error('[orderDatabaseService.clearDatabase] Не удалось удалить файл фото.', error);
-        }
-      }),
-    );
     await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    for (const { uri } of photoRows) {
+      deleteFileQuietly(toRuntimeUri(uri));
+    }
     logger.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
   },
 };

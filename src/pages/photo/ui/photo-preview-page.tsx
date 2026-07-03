@@ -31,7 +31,7 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
       KeyboardController.dismiss();
       if (!savedRef.current) {
         // Orphan-cleanup: пользователь ушёл с экрана без сохранения («Назад»/«Переснять») —
-        // удаляем уже скопированный файл. Fire-and-forget (deletePhoto не бросает) — не блокирует навигацию.
+        // удаляем уже скопированный файл. Синхронный вызов, не бросает — не блокирует навигацию.
         deletePhoto(uri);
       }
     });
