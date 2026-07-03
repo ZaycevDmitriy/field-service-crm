@@ -20,6 +20,15 @@ export interface IPhotoPreviewProps {
 export const PhotoPreview: FC<IPhotoPreviewProps> = ({ uri, onSave, onRetake }) => {
   const colors = useColors();
   const [comment, setComment] = useState('');
+  // Local state экрана (PDR §13): защищает от дубля фото при двойном тапе «Сохранить фото» —
+  // за ~300 мс анимации dismissTo родительский экран успевает получить второй onPress. Блокирует
+  // обе кнопки: «Переснять» во время сохранения оставил бы гонку за то же окно dismissTo.
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = () => {
+    setSaving(true);
+    onSave(comment);
+  };
 
   return (
     <KeyboardGestureArea
@@ -58,9 +67,17 @@ export const PhotoPreview: FC<IPhotoPreviewProps> = ({ uri, onSave, onRetake }) 
             variant="primary"
             size="lg"
             fullWidth
-            onPress={() => onSave(comment)}
+            loading={saving}
+            disabled={saving}
+            onPress={handleSave}
           />
-          <Button title="Переснять" variant="secondary" fullWidth onPress={onRetake} />
+          <Button
+            title="Переснять"
+            variant="secondary"
+            fullWidth
+            disabled={saving}
+            onPress={onRetake}
+          />
         </View>
       </KeyboardAwareScrollView>
     </KeyboardGestureArea>
