@@ -6,6 +6,7 @@ import { ServiceOrderStatusEnum } from '../model/order-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
+import { deleteFileQuietly } from '@/shared/lib/fs';
 import { logger } from '@/shared/lib/logger';
 
 // Database-сервис заявок — деталь реализации слайса (наружу через публичный API не выносится).
@@ -21,7 +22,8 @@ import { logger } from '@/shared/lib/logger';
 const DATABASE_VERSION = 2;
 
 // Row-интерфейсы: представление строк таблиц (snake_case колонки). Маппятся на домен (camelCase).
-interface IServiceOrderRow {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+export interface IServiceOrderRow {
   id: string;
   status: string;
   title: string;
@@ -34,7 +36,7 @@ interface IServiceOrderRow {
   longitude: number;
 }
 
-interface IServiceOrderPhotoRow {
+export interface IServiceOrderPhotoRow {
   id: string;
   order_id: string;
   uri: string;
@@ -73,18 +75,20 @@ const SCHEMA_SQL = `
 // (см. photoService.persistPhoto); внешние и mock-схемы (mock://, http(s)://) не конвертируются.
 
 // Абсолютный file://-URI под document-каталогом → относительный путь; прочие схемы — как есть.
-const toStoredUri = (uri: string): string => {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts), потребитель в рантайме
+// остаётся только этот модуль.
+export const toStoredUri = (uri: string): string => {
   const documentUri = Paths.document.uri;
 
   return uri.startsWith(documentUri) ? uri.slice(documentUri.length).replace(/^\/+/, '') : uri;
 };
 
 // Относительный путь без URI-схемы → абсолютный URI под текущим document-каталогом; URI со схемой — как есть.
-const toRuntimeUri = (stored: string): string =>
+export const toRuntimeUri = (stored: string): string =>
   stored.includes('://') ? stored : new File(Paths.document, stored).uri;
 
 // Мапперы (чистые, типизированные): snake_case строка БД ↔ camelCase домен.
-const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
+export const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   id: row.id,
   uri: toRuntimeUri(row.uri),
   // `comment` опционален в домене: NULL из БД → отсутствие ключа.
@@ -92,7 +96,7 @@ const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   createdAt: row.created_at,
 });
 
-const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
+export const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
   id: row.id,
   // В колонке хранятся значения ServiceOrderStatusEnum (запись контролируется сервисом).
   status: row.status as ServiceOrderStatusEnum,
@@ -183,7 +187,8 @@ const groupPhotosByOrderId = (rows: IServiceOrderPhotoRow[]): Map<string, IServi
 // Миграция схемы заявок до v2 (Phase 6): добавляет координаты в существующие установки и убирает
 // производный distance_label. Идемпотентна и безопасна для свежих установок — операции применяются
 // только если фактическая схема таблицы этого требует (интроспекция через PRAGMA table_info).
-const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
   const columns = await database.getAllAsync<{ name: string }>(
     'PRAGMA table_info(service_orders);',
   );
@@ -271,13 +276,23 @@ export const orderDatabaseService = {
     );
   },
 
-  // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS).
+  // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS). Оба SELECT —
+  // в withExclusiveTransactionAsync: `withTransactionAsync` не изолирует — конкурентные запросы
+  // того же соединения включаются в открытую транзакцию и откатываются вместе с ней (например,
+  // fire-and-forget записи стора persistStatus/addOrderPhoto), эксклюзивная транзакция выполняется
+  // на отдельном соединении. На web не поддерживается — SQLite-слой проекта и так native-only.
   async getOrders(): Promise<IServiceOrder[]> {
     const database = await getDatabase();
-    const orderRows = await database.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
-    const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
-      'SELECT * FROM service_order_photos',
-    );
+    let orderRows: IServiceOrderRow[] = [];
+    let photoRows: IServiceOrderPhotoRow[] = [];
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      orderRows = await txn.getAllAsync<IServiceOrderRow>('SELECT * FROM service_orders');
+      photoRows = await txn.getAllAsync<IServiceOrderPhotoRow>(
+        'SELECT * FROM service_order_photos',
+      );
+    });
+
     const photosByOrderId = groupPhotosByOrderId(photoRows);
 
     return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
@@ -322,10 +337,19 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
-  // Полностью очищает обе таблицы. Фото удаляются раньше заявок из-за внешнего ключа.
+  // Полностью очищает обе таблицы и физические файлы фото на диске. URI читаются в память заранее,
+  // поэтому строки удаляются ДО файлов — при сбое DELETE файлы остаются на месте и записи в БД не
+  // бьются; mock://-URI сид-фото `deleteFileQuietly` пропускает молча. `File.exists`/`delete`
+  // синхронные — параллелизм (Promise.all) не нужен, поэтому цикл for..of.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
+    const photoRows = await database.getAllAsync<{ uri: string }>(
+      'SELECT uri FROM service_order_photos',
+    );
     await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    for (const { uri } of photoRows) {
+      deleteFileQuietly(toRuntimeUri(uri));
+    }
     logger.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
   },
 };

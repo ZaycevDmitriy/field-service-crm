@@ -25,6 +25,9 @@ const CAMERA = {
   tile: 'rgba(255,255,255,0.12)',
   shutter: '#FFFFFF',
   shutterRing: 'rgba(255,255,255,0.30)',
+  // Светлый синий для ghost-действия («Выбрать из галереи»): фикс, экран theme-independent (тема не
+  // годится — light-accent на near-black даёт ~3.4); ≥4.5 на bg.
+  action: '#8AB0F5',
 } as const;
 
 interface IControlButtonProps {
@@ -179,6 +182,7 @@ export const PhotoCaptureView: FC<IPhotoCaptureViewProps> = ({ onCaptured, onClo
               variant="ghost"
               fullWidth
               disabled={isBusy}
+              textColor={CAMERA.action}
               onPress={() => {
                 void handleGallery();
               }}

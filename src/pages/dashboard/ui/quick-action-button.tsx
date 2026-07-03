@@ -31,7 +31,7 @@ export const QuickActionButton: FC<IQuickActionButtonProps> = ({
     >
       <Card style={styles.card}>
         <View style={[styles.tile, { backgroundColor: colors.surfaceMuted }]}>
-          <IconSymbol name={icon} size={20} color={colors.primary} />
+          <IconSymbol name={icon} size={20} color={colors.accent} />
         </View>
         <Text size="15" weight="semibold">
           {title}

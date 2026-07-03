@@ -1,9 +1,9 @@
 import { type FC } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { OrderStatusLabel, type ServiceOrderStatusEnum } from '../../model';
+import { OrderStatusLabel, useOrderStatusColors, type ServiceOrderStatusEnum } from '../../model';
 
-import { FontSize, Radius, Spacing, useOrderStatusColors } from '@/shared/config';
+import { FontSize, Radius, Spacing } from '@/shared/config';
 import { Text } from '@/shared/ui';
 
 export type IOrderStatusBadgeSize = 'sm' | 'md' | 'lg';

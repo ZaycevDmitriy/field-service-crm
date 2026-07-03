@@ -187,6 +187,18 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   },
 
   clearDatabase: async () => {
+    // Тот же guard/loading-паттерн, что в initialize/loadOrders: не даёт clearDatabase запуститься
+    // параллельно с гидрацией стора (и наоборот) — иначе порядок резолва промисов не гарантирован.
+    // Отказ теперь виден пользователю тостом (раньше был молчаливым no-op).
+    if (get().loading) {
+      logger.warn('[useOrdersStore.clearDatabase] Пропущено: идёт загрузка данных.');
+      useToastStore
+        .getState()
+        .showToast(ToastVariantEnum.Info, 'Данные загружаются — попробуйте ещё раз');
+
+      return;
+    }
+    set({ loading: true });
     try {
       await orderDatabaseService.clearDatabase();
       // Перезагрузка из БД: после очистки список пуст → EmptyState на экранах.
@@ -194,6 +206,8 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     } catch (error) {
       logger.error('[useOrdersStore.clearDatabase] Не удалось очистить БД.', error);
       set({ error: 'Не удалось очистить базу данных' });
+    } finally {
+      set({ loading: false });
     }
   },
 }));

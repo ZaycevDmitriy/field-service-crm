@@ -3,9 +3,9 @@ import * as Updates from 'expo-updates';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
-  checkForUpdate as runUpdateCheck,
   isOtaEnabled,
   reloadApp as runReloadApp,
+  checkForUpdate as runUpdateCheck,
   UpdateOutcomeEnum,
 } from '../lib/updateService';
 

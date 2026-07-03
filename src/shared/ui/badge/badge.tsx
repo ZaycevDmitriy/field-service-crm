@@ -17,17 +17,18 @@ interface IBadgeColors {
   text: keyof IColors;
 }
 
-// Текстовый бейдж: solid-фон по варианту, нейтральный для neutral (PDR §9.2; всегда с текстом).
+// Текстовый бейдж: tinted-фон (*Surface) + насыщенный текст того же семейства; danger-текст —
+// dangerAccent (danger зарезервирован под white-safe заливку). Все варианты ≥4.5 обе темы (PDR §9.2).
 export const Badge: FC<IBadgeProps> = ({ variant = 'neutral', children }) => {
   const colors = useColors();
 
   // Карта цветов по варианту; пересоздаётся только при смене темы (ссылка colors стабильна).
   const variantColors = useMemo<Record<IBadgeVariant, IBadgeColors>>(
     () => ({
-      info: { background: colors.info, text: 'white' },
-      success: { background: colors.success, text: 'white' },
-      warning: { background: colors.warning, text: 'white' },
-      danger: { background: colors.danger, text: 'white' },
+      info: { background: colors.infoSurface, text: 'info' },
+      success: { background: colors.successSurface, text: 'success' },
+      warning: { background: colors.warningSurface, text: 'warning' },
+      danger: { background: colors.dangerSurface, text: 'dangerAccent' },
       neutral: { background: colors.surfaceMuted, text: 'textSecondary' },
     }),
     [colors],

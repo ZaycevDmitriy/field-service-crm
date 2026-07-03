@@ -31,10 +31,14 @@ interface IVariantStyle {
   icon: IconName;
 }
 
-// Маппинг варианта на токены палитры и иконку. Имя `error` семантическое — токен соответствующего
-// цвета называется `danger`/`dangerSurface`.
+// Маппинг варианта на токены палитры и иконку. Имя `error` семантическое — фон `dangerSurface`,
+// иконка/текст — `dangerAccent` (`danger` зарезервирован под white-safe заливку кнопки).
 const VARIANT_STYLE: Record<IToastVariant, IVariantStyle> = {
-  error: { surface: 'dangerSurface', accent: 'danger', icon: 'exclamationmark.triangle.fill' },
+  error: {
+    surface: 'dangerSurface',
+    accent: 'dangerAccent',
+    icon: 'exclamationmark.triangle.fill',
+  },
   info: { surface: 'infoSurface', accent: 'info', icon: 'info.circle.fill' },
   success: { surface: 'successSurface', accent: 'success', icon: 'checkmark.circle.fill' },
 };

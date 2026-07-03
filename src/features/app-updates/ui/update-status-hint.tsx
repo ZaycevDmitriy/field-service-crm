@@ -13,7 +13,7 @@ interface IUpdateStatusHintProps {
 export const UpdateStatusHint: FC<IUpdateStatusHintProps> = ({ isEnabled, errorMessage }) => {
   if (errorMessage) {
     return (
-      <Text size="13" color="danger">
+      <Text size="13" color="dangerAccent">
         {errorMessage}
       </Text>
     );

@@ -1,5 +1,11 @@
 // Публичный API слайса order.
-export type { IServiceOrder, IServiceOrderPhoto, IOrdersStore } from './model';
+export type {
+  IServiceOrder,
+  IServiceOrderPhoto,
+  IOrdersStore,
+  IOrderStatusColor,
+  IOrderStatusColors,
+} from './model';
 export {
   ServiceOrderStatusEnum,
   OrderStatusLabel,
@@ -8,6 +14,9 @@ export {
   useOrdersStore,
   getNearestOrder,
   useOrderDistanceLabel,
+  lightOrderStatusColors,
+  darkOrderStatusColors,
+  useOrderStatusColors,
 } from './model';
 export {
   OrderStatusBadge,

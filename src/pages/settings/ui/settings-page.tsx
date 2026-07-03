@@ -6,6 +6,7 @@ import { useOrdersStore } from '@/entities/order';
 import { UpdateStatusBadge, UpdateStatusHint, useAppUpdates } from '@/features/app-updates';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { formatDateTime } from '@/shared/lib/date';
+import { cancelAllReminders } from '@/shared/lib/notifications';
 import { Button, DiagnosticCard, DiagnosticRow, IconSymbol, Screen, Text } from '@/shared/ui';
 
 // Экран «Настройки»: живая диагностика доставки (EAS Build/Update) через useAppUpdates и управление
@@ -29,7 +30,7 @@ export const SettingsPage: FC = () => {
   const handleClearDatabase = () => {
     Alert.alert(
       'Очистить локальную БД?',
-      'Все заявки и фото будут удалены с устройства. Демо-данные восстановятся при следующем запуске.',
+      'Все заявки, фото и напоминания будут удалены с устройства. Демо-данные восстановятся при следующем запуске.',
       [
         { text: 'Отмена', style: 'cancel' },
         {
@@ -37,6 +38,8 @@ export const SettingsPage: FC = () => {
           style: 'destructive',
           onPress: () => {
             clearDatabase();
+            // Напоминания по удаляемым заявкам больше не актуальны. Fire-and-forget: graceful внутри.
+            void cancelAllReminders();
           },
         },
       ],
@@ -123,7 +126,7 @@ export const SettingsPage: FC = () => {
           <View style={styles.block}>
             <View style={styles.row}>
               <View style={[styles.tile, { backgroundColor: colors.surfaceMuted }]}>
-                <IconSymbol name="externaldrive.fill" size={18} color={colors.primary} />
+                <IconSymbol name="externaldrive.fill" size={18} color={colors.accent} />
               </View>
               <View style={styles.rowText}>
                 <Text size="15" weight="medium">

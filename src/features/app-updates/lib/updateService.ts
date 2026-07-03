@@ -74,7 +74,7 @@ export async function reloadApp(): Promise<void> {
 
   if (!isOtaEnabled) {
     logger.info(`${LOG_TAG} reloadApp: OTA отключены → no-op`);
-    return;
+    throw new Error('Обновления доступны только в сборке EAS, не в режиме разработки.');
   }
 
   try {
