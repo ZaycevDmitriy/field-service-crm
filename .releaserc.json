@@ -5,7 +5,10 @@
     ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Changelog" }],
-    ["@semantic-release/exec", { "prepareCmd": "bash scripts/release/build-android.sh ${nextRelease.version}" }],
+    ["@semantic-release/exec", {
+      "verifyConditionsCmd": "bash scripts/release/verify-conditions.sh",
+      "prepareCmd": "bash scripts/release/build-android.sh ${nextRelease.version}"
+    }],
     ["@semantic-release/git", {
       "assets": ["CHANGELOG.md"],
       "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
