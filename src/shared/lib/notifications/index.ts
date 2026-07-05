@@ -11,4 +11,4 @@ export {
   cancelOrderRemindersByKey,
   cancelAllReminders,
   type IReminderContent,
-} from './notificationService';
+} from './notification-service';

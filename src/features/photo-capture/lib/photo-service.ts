@@ -2,13 +2,14 @@ import { type CameraView } from 'expo-camera';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 
-import { requestMediaLibraryPermissionAsync } from './photoPermissionService';
+import { requestMediaLibraryPermissionAsync } from './photo-permission-service';
 
 import { deleteFileQuietly, listDirectoryQuietly } from '@/shared/lib/fs';
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
 
-// Качество JPEG для съёмки (0–1). 0.7 — компромисс между размером файла и детализацией фотоотчёта.
+// Качество JPEG (0–1) для съёмки камерой и выбора из галереи. 0.7 — компромисс между размером
+// файла и детализацией фотоотчёта; одно значение для обоих источников снимка.
 const CAPTURE_QUALITY = 0.7;
 
 // Подкаталог постоянного хранилища (Paths.document) для копий снимков.
@@ -47,15 +48,21 @@ export const photoService = {
   },
 
   /**
-   * Открывает галерею и возвращает URI выбранного изображения (или null при отмене/сбое).
-   * Разрешение запрашивается заранее (см. photoPermissionService); современный picker его не требует.
+   * Открывает галерею и возвращает URI выбранного изображения (или null при отмене/сбое/отказе).
+   * Разрешение запрашивается заранее (см. photoPermissionService); современный picker его не требует,
+   * но при явном отказе (legacy ОС) открывать галерею незачем — это уже финальный отказ пользователя.
    */
   async pickPhotoFromLibrary(): Promise<string | null> {
     try {
-      await requestMediaLibraryPermissionAsync();
+      const granted = await requestMediaLibraryPermissionAsync();
+      if (!granted) {
+        logger.info('[photoService.pickPhotoFromLibrary] Доступ к галерее не предоставлен.');
+
+        return null;
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 1,
+        quality: CAPTURE_QUALITY,
       });
       if (result.canceled) {
         logger.info('[photoService.pickPhotoFromLibrary] Выбор отменён.');
@@ -75,10 +82,12 @@ export const photoService = {
   },
 
   /**
-   * Копирует временный снимок в постоянное хранилище `Paths.document/photos/<id>.<ext>` и возвращает
-   * абсолютный URI копии. Камера/пикер пишут во временное/кэш-хранилище, которое ОС может очистить, —
-   * копия в document-каталоге переживает перезапуск (PDR §15 acc. 3). FS-методы `create`/`copy`
-   * синхронные. При сбое ФС не роняем флоу: фоллбэк на исходный временный URI.
+   * Переносит временный снимок в постоянное хранилище `Paths.document/photos/<id>.<ext>` и возвращает
+   * абсолютный URI. Камера/пикер пишут во временное/кэш-хранилище, которое ОС может очистить, —
+   * файл в document-каталоге переживает перезапуск (PDR §15 acc. 3). Основной путь — `move`: не
+   * оставляет дубль JPEG во временном хранилище. Если перенос между томами (cache→document)
+   * недоступен на платформе — фоллбэк на `copy` + явное удаление исходника. При сбое ФС не роняем
+   * флоу: фоллбэк на исходный временный URI.
    */
   async persistPhoto(tempUri: string): Promise<string> {
     try {
@@ -88,7 +97,18 @@ export const photoService = {
         directory.create({ intermediates: true });
       }
       const destination = new File(directory, `${createId()}.${getExtension(tempUri)}`);
-      new File(tempUri).copy(destination);
+      const source = new File(tempUri);
+
+      try {
+        await source.move(destination);
+      } catch (moveError) {
+        logger.debug(
+          '[photoService.persistPhoto] move недоступен, фоллбэк на copy + удаление исходника.',
+          moveError,
+        );
+        await source.copy(destination);
+        deleteFileQuietly(tempUri);
+      }
       logger.info('[photoService.persistPhoto] Снимок сохранён в постоянное хранилище.');
 
       return destination.uri;

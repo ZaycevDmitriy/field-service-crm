@@ -1,19 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-import { locationService } from './locationService';
+import { locationService } from './location-service';
 
 import { useAppStore } from '@/shared/model';
-
-// Статус получения локации — для опциональной индикации в UI. Отдельного loading-экрана нет:
-// получение локации — неблокирующий фон (PDR §16), статус нужен лишь как подсказка интерфейсу.
-export const LocationStatusEnum = {
-  Idle: 'Idle',
-  Loading: 'Loading',
-  Granted: 'Granted',
-  Denied: 'Denied',
-  Error: 'Error',
-} as const;
-export type LocationStatusEnum = (typeof LocationStatusEnum)[keyof typeof LocationStatusEnum];
 
 /**
  * Однократно запрашивает разрешение и текущие координаты, записывая их в `app-store.currentLocation`.
@@ -22,39 +11,25 @@ export type LocationStatusEnum = (typeof LocationStatusEnum)[keyof typeof Locati
  * доступен (PDR §16, §21 acc. 2/3). Вызывать один раз на главном экране (dashboard); остальные
  * экраны читают готовое значение из стора.
  */
-export function useCurrentLocation(): LocationStatusEnum {
+export function useCurrentLocation(): void {
   const setCurrentLocation = useAppStore((state) => state.setCurrentLocation);
-  const [status, setStatus] = useState<LocationStatusEnum>(LocationStatusEnum.Idle);
 
   useEffect(() => {
     // Защита от записи состояния после размонтирования (эффект однократный, но запросы асинхронны).
     let cancelled = false;
 
     const resolveLocation = async (): Promise<void> => {
-      setStatus(LocationStatusEnum.Loading);
-
       const granted = await locationService.requestForegroundPermission();
-      if (cancelled) {
-        return;
-      }
-      if (!granted) {
-        setStatus(LocationStatusEnum.Denied);
-
+      if (cancelled || !granted) {
         return;
       }
 
       const coords = await locationService.getCurrentCoords();
-      if (cancelled) {
-        return;
-      }
-      if (!coords) {
-        setStatus(LocationStatusEnum.Error);
-
+      if (cancelled || !coords) {
         return;
       }
 
       setCurrentLocation(coords);
-      setStatus(LocationStatusEnum.Granted);
     };
 
     void resolveLocation();
@@ -63,6 +38,4 @@ export function useCurrentLocation(): LocationStatusEnum {
       cancelled = true;
     };
   }, [setCurrentLocation]);
-
-  return status;
 }

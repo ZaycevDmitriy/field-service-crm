@@ -18,7 +18,7 @@ export const MOCK_SERVICE_ORDERS: IServiceOrder[] = [
     description:
       'Установить и настроить Wi-Fi роутер у абонента. Проверить уровень сигнала в комнатах, выдать памятку по доступу к сети.',
     scheduledTime: '09:00',
-    scheduledSlot: '12:00 — 13:00',
+    scheduledSlot: '09:00 — 10:00',
     latitude: 55.76233,
     longitude: 37.60797,
     photos: [],

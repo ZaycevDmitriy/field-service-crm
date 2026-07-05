@@ -5,4 +5,4 @@
 // при старте приложения (после гидрации стора) для очистки файлов, оставшихся без записи в БД.
 export { PhotoCaptureView, type IPhotoCaptureViewProps } from './ui/photo-capture-view';
 export { PhotoPreview, type IPhotoPreviewProps } from './ui/photo-preview';
-export { deletePhoto, sweepOrphanPhotos } from './lib/photoService';
+export { deletePhoto, sweepOrphanPhotos } from './lib/photo-service';

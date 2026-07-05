@@ -1,6 +1,6 @@
 import { type FC } from 'react';
 
-import { openMapsRoute } from '../lib/openMapsRoute';
+import { openMapsRoute } from '../lib/open-maps-route';
 
 import type { IServiceOrder } from '@/entities/order';
 import { useColors } from '@/shared/config';

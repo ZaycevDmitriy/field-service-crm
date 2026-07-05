@@ -298,13 +298,15 @@ export const orderDatabaseService = {
       return;
     }
 
-    // Вся партия сида — в одной транзакции (атомарность: либо все строки, либо ни одной).
-    await database.withTransactionAsync(async () => {
+    // Вся партия сида — в withExclusiveTransactionAsync: только эксклюзивная транзакция
+    // гарантирует атомарность (обычная withTransactionAsync не изолирует конкурентные запросы
+    // того же соединения, см. комментарий getOrders).
+    await database.withExclusiveTransactionAsync(async (txn) => {
       for (const order of MOCK_SERVICE_ORDERS) {
-        await insertOrder(database, order);
+        await insertOrder(txn, order);
 
         for (const photo of order.photos) {
-          await insertPhoto(database, order.id, photo);
+          await insertPhoto(txn, order.id, photo);
         }
       }
     });
@@ -336,32 +338,6 @@ export const orderDatabaseService = {
     return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
   },
 
-  // Возвращает заявку по id с её фото или null. Caller в Phase 4 нет (детали читаются из памяти
-  // стора) — метод контракта §14 на будущие фазы.
-  async getOrderById(orderId: string): Promise<IServiceOrder | null> {
-    try {
-      const database = await getDatabase();
-      const orderRow = await database.getFirstAsync<IServiceOrderRow>(
-        'SELECT * FROM service_orders WHERE id = ?',
-        orderId,
-      );
-
-      if (!orderRow) {
-        return null;
-      }
-
-      const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
-        'SELECT * FROM service_order_photos WHERE order_id = ?',
-        orderId,
-      );
-
-      return rowToOrder(orderRow, photoRows.map(rowToPhoto));
-    } catch (error) {
-      logger.error('[orderDatabaseService.getOrderById] Не удалось получить заявку.', error);
-      throw error;
-    }
-  },
-
   // Персистит смену статуса заявки. Параметризованный UPDATE (без интерполяции).
   async updateOrderStatus(orderId: string, status: ServiceOrderStatusEnum): Promise<void> {
     const database = await getDatabase();
@@ -375,16 +351,21 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
-  // Полностью очищает обе таблицы и физические файлы фото на диске. URI читаются в память заранее,
-  // поэтому строки удаляются ДО файлов — при сбое DELETE файлы остаются на месте и записи в БД не
-  // бьются; mock://-URI сид-фото `deleteFileQuietly` пропускает молча. `File.exists`/`delete`
-  // синхронные — параллелизм (Promise.all) не нужен, поэтому цикл for..of.
+  // Полностью очищает обе таблицы и физические файлы фото на диске. SELECT + оба DELETE — в одной
+  // withExclusiveTransactionAsync (атомарность и изоляция от конкурентных запросов того же
+  // соединения, см. комментарий getOrders); удаление файлов — ПОСЛЕ коммита транзакции: при сбое
+  // DELETE файлы остаются на месте и записи в БД не бьются; mock://-URI сид-фото
+  // `deleteFileQuietly` пропускает молча. `File.exists`/`delete` синхронные — параллелизм
+  // (Promise.all) не нужен, поэтому цикл for..of.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
-    const photoRows = await database.getAllAsync<{ uri: string }>(
-      'SELECT uri FROM service_order_photos',
-    );
-    await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    let photoRows: { uri: string }[] = [];
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      photoRows = await txn.getAllAsync<{ uri: string }>('SELECT uri FROM service_order_photos');
+      await txn.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    });
+
     for (const { uri } of photoRows) {
       deleteFileQuietly(toRuntimeUri(uri));
     }

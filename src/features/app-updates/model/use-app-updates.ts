@@ -7,7 +7,7 @@ import {
   reloadApp as runReloadApp,
   checkForUpdate as runUpdateCheck,
   UpdateOutcomeEnum,
-} from '../lib/updateService';
+} from '../lib/update-service';
 
 import { useAppStore } from '@/shared/model';
 

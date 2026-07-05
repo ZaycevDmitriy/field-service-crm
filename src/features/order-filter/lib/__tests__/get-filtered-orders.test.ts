@@ -1,4 +1,4 @@
-import { getFilteredOrders } from '../getFilteredOrders';
+import { getFilteredOrders } from '../get-filtered-orders';
 
 import { OrderFilterEnum, ServiceOrderStatusEnum, type IServiceOrder } from '@/entities/order';
 

@@ -69,6 +69,15 @@ const persistStatus = (
   action: string,
   onPersisted?: () => void,
 ): void => {
+  // Dev-only стресс-тест виртуализации: стор наполнен синтетикой мимо БД (см. initialize) — персист
+  // пропускается (БД в этом режиме не создана), но onPersisted вызывается: отмена напоминания не
+  // зависит от БД, и запланированное на синтетическую заявку уведомление надо снять.
+  if (STRESS_TEST) {
+    logger.debug(`[useOrdersStore.${action}] STRESS_TEST: персист статуса пропущен.`);
+    onPersisted?.();
+
+    return;
+  }
   // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
   orderDatabaseService
     .updateOrderStatus(orderId, to)
@@ -117,6 +126,13 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   },
 
   loadOrders: async () => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — pull-to-refresh не должен
+    // за ней ходить (иначе «no such table» → error-состояние списка).
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.loadOrders] STRESS_TEST: загрузка из БД пропущена.');
+
+      return;
+    }
     // Guard от повторного входа: дубль вызова во время загрузки (в т.ч. StrictMode в dev) — no-op.
     // Первый set({ loading: true }) проходит синхронно до await, поэтому второй вызов отсекается здесь.
     if (get().loading) {
@@ -233,6 +249,12 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
         item.id === orderId ? { ...item, photos: [...item.photos, photo] } : item,
       ),
     });
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — персист фото пропускается.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.addOrderPhoto] STRESS_TEST: персист фото пропущен.');
+
+      return;
+    }
     // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
     orderDatabaseService.addOrderPhoto(orderId, photo).catch((error) => {
       logger.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
@@ -244,6 +266,14 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   },
 
   clearDatabase: async () => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — очищать нечего, но
+    // молчаливый no-op маскировал бы нажатие кнопки в Settings, поэтому явный Info-тост.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.clearDatabase] STRESS_TEST: очистка БД пропущена.');
+      useToastStore.getState().showToast(ToastVariantEnum.Info, 'Недоступно в режиме стресс-теста');
+
+      return;
+    }
     // Тот же guard/loading-паттерн, что в initialize/loadOrders: не даёт clearDatabase запуститься
     // параллельно с гидрацией стора (и наоборот) — иначе порядок резолва промисов не гарантирован.
     // Отказ теперь виден пользователю тостом (раньше был молчаливым no-op).

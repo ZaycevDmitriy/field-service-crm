@@ -38,8 +38,6 @@ const Toaster: FC = () => {
   const dismissToast = useToastStore((state) => state.dismissToast);
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
-  KeyboardController.setInputMode(AndroidSoftInputModes.SOFT_INPUT_ADJUST_NOTHING);
-
   useEffect(() => {
     const visible = new Set(toasts.map((toast) => toast.id));
     // Новым тостам — таймер авто-закрытия; существующим отсчёт не сбрасываем.
@@ -83,6 +81,13 @@ const Toaster: FC = () => {
 
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
+
+  // Android: клавиатура не должна двигать/резать контент над ней (экраны сами управляют скроллом/
+  // отступами). Вызов вынесен из render-фазы Toaster — побочный эффект внешнего модуля не должен
+  // выполняться на каждый рендер компонента.
+  useEffect(() => {
+    KeyboardController.setInputMode(AndroidSoftInputModes.SOFT_INPUT_ADJUST_NOTHING);
+  }, []);
 
   // Однократный bootstrap БД при старте (не-реактивный getState): инициализация SQLite, идемпотентный
   // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.

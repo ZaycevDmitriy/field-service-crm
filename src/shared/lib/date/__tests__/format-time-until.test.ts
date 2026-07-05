@@ -1,4 +1,4 @@
-import { formatTimeUntil } from '../formatTimeUntil';
+import { formatTimeUntil } from '../format-time-until';
 
 // Фиксированная точка отсчёта: 10:00. Каждый тест передаёт `now` явно — без системных часов.
 const NOW = new Date(2026, 0, 1, 10, 0);
