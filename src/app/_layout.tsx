@@ -92,7 +92,15 @@ const RootLayout: FC = () => {
     useOrdersStore
       .getState()
       .initialize()
-      .then(() => sweepOrphanPhotos(getKnownPhotoUris()));
+      .then(() => {
+        const { error, loading } = useOrdersStore.getState();
+        // Sweep только при подтверждённо успешной гидрации: при сбое БД initialize резолвится с
+        // error и пустым стором, а StrictMode-дубль резолвится мгновенно (guard по loading), пока
+        // первый вызов ещё гидрирует, — в обоих случаях sweep снёс бы все реальные фото как сироты.
+        if (!error && !loading) {
+          sweepOrphanPhotos(getKnownPhotoUris());
+        }
+      });
     // Создаём Android-канал напоминаний до первого планирования (на iOS — true сразу). Module-level
     // setNotificationHandler уже выставлен самим импортом сегмента notifications. При сбое канала —
     // мягкое уведомление пользователю (напоминания могут не работать), приложение продолжает работать.
