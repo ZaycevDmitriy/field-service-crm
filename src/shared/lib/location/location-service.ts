@@ -43,14 +43,31 @@ export const locationService = {
   // скорость/энергия, достаточна для дистанции «по прямой» (не для пошаговой навигации).
   async getCurrentCoords(): Promise<ICoords | null> {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
-      const position = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        new Promise<never>((_resolve, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error('Location request timed out')),
-            LOCATION_TIMEOUT_MS,
+      // Страховочный catch навешивается сразу на промис геолокации (до Promise.race), чтобы его
+      // rejection всегда считался обработанным — даже если он приходит уже после того, как гонку
+      // выиграл таймаут (иначе это unhandled rejection). Поведение самой гонки не меняем: ошибка
+      // пробрасывается дальше и либо ловится внешним catch (геолокация выиграла), либо просто
+      // логируется как поздний отказ (таймаут уже выиграл).
+      const positionPromise = Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      }).catch((error: unknown) => {
+        if (timedOut) {
+          logger.debug(
+            '[locationService.getCurrentCoords] Геолокация отклонена после истечения таймаута.',
+            error,
           );
+        }
+        throw error;
+      });
+      const position = await Promise.race([
+        positionPromise,
+        new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('Location request timed out'));
+          }, LOCATION_TIMEOUT_MS);
         }),
       ]);
       const { latitude, longitude } = position.coords;

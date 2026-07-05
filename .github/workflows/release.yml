@@ -76,11 +76,17 @@ jobs:
       # Версия, CHANGELOG, доставка (OTA/APK) и GitHub Release — всё по .releaserc.json. Токен по умолчанию
       # не ре-триггерит workflow (пуш CHANGELOG в main петлю не создаёт), плюс [skip ci] в коммите бота.
       # GH_TOKEN: gh release download/upload в скриптах. EXPO_TOKEN: eas update в OTA-ветви.
+      # ANDROID_*: release-подпись APK (L18, аудит 2026-07-02) — verify-conditions проверяет их
+      # непустоту до необратимых шагов, build-android.sh декодирует keystore после prebuild.
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: npx semantic-release
 
   # После релиза возвращаем CHANGELOG-коммит (и тег-историю) с main обратно в develop, чтобы ветки
