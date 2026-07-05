@@ -11,11 +11,15 @@
 # недоступна: и `gh`, и `eas` нужны безусловно (build-android.sh скачивает предыдущий fingerprint
 # через `gh release download` даже на OTA-ветви, а маршрут OTA/APK ещё не известен на этом шаге).
 #
+# L18 (аудит 2026-07-02): маршрут OTA/APK решается позже (в prepare), но первый релиз после этого
+# батча ВСЕГДА уйдёт на APK (fingerprint изменён плагином подписи) — секреты release-keystore нужны
+# безусловно, падаем здесь же, до тега/Release, а не посреди assembleRelease.
+#
 # Verbose-трассировка через echo — лог виден в Actions UI рядом с остальными release-скриптами.
 
 set -euo pipefail
 
-echo "[verify-conditions] START: проверяю авторизацию gh/eas перед необратимыми шагами релиза."
+echo "[verify-conditions] START: проверяю авторизацию gh/eas и секреты release-подписи перед необратимыми шагами релиза."
 
 echo "[verify-conditions] gh auth status…"
 if ! gh auth status; then
@@ -29,4 +33,18 @@ if ! eas whoami; then
   exit 1
 fi
 
-echo "[verify-conditions] DONE: gh и eas авторизованы."
+echo "[verify-conditions] проверяю непустоту секретов release-keystore…"
+for VAR_NAME in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+  if [ -z "${!VAR_NAME:-}" ]; then
+    echo "::error::[verify-conditions] секрет ${VAR_NAME} пуст или не задан — release-подпись APK недоступна."
+    exit 1
+  fi
+done
+
+echo "[verify-conditions] проверяю валидность base64 в ANDROID_KEYSTORE_BASE64…"
+if ! echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > /dev/null 2>&1; then
+  echo "::error::[verify-conditions] ANDROID_KEYSTORE_BASE64 не является валидным base64."
+  exit 1
+fi
+
+echo "[verify-conditions] DONE: gh и eas авторизованы, секреты release-keystore заданы и валидны."

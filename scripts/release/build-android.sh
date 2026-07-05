@@ -12,8 +12,10 @@
 # fingerprint.txt генерится ВСЕГДА и прикладывается к любому релизу — иначе guard следующего релиза
 # не найдёт «последний» отпечаток.
 #
-# Путь A: нативный Gradle на раннере GitHub, без EAS-кредитов. Подпись — debug.keystore из шаблона
-# prebuild (signingConfigs.debug), секреты не нужны, подпись стабильна.
+# Путь A: нативный Gradle на раннере GitHub, без EAS-кредитов. Подпись (L18, аудит 2026-07-02) —
+# собственный release-keystore из GitHub Secrets (plugins/with-release-signing.js инжектит
+# signingConfigs.release в build.gradle); при отсутствии секретов Gradle-сниппет сам фоллбэкается
+# на debug.keystore — локальный `expo run:android` работает без секретов.
 #
 # Verbose-трассировка через echo на каждом шаге — лог сборки читается в Actions UI.
 
@@ -128,7 +130,19 @@ npx expo prebuild --platform android --no-install
 
 chmod +x android/gradlew
 
-# 6. KSP (:expo-updates:kspReleaseKotlin) исчерпывает дефолтный Metaspace шаблона prebuild на раннере →
+# 6. Release-keystore (L18, аудит 2026-07-02): decode СТРОГО ПОСЛЕ prebuild — он пересоздаёт
+#    android/ и стёр бы файл, будь он положен раньше. plugins/with-release-signing.js уже инжектил
+#    в build.gradle константный сниппет, который сам подхватит этот файл по имени. Без секрета
+#    (verify-conditions гарантирует его непустоту в CI, но локально/в форках секретов нет) —
+#    пропускаем: Gradle-сниппет фоллбэкается на debug.keystore.
+if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+  echo "[build-android] decode release.keystore из ANDROID_KEYSTORE_BASE64…"
+  echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > android/app/release.keystore
+else
+  echo "[build-android] ANDROID_KEYSTORE_BASE64 не задан → сборка уйдёт на debug-подпись шаблона."
+fi
+
+# 7. KSP (:expo-updates:kspReleaseKotlin) исчерпывает дефолтный Metaspace шаблона prebuild на раннере →
 #    OutOfMemoryError: Metaspace. Поднимаем лимиты Gradle- и Kotlin-демонов (дубль ключа → берётся последний).
 echo "[build-android] поднимаем память Gradle/Kotlin (KSP Metaspace)…"
 {
@@ -137,11 +151,11 @@ echo "[build-android] поднимаем память Gradle/Kotlin (KSP Metaspa
   echo "kotlin.daemon.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=1024m"
 } >> android/gradle.properties
 
-# 7. Release-APK.
+# 8. Release-APK.
 echo "[build-android] assembleRelease…"
 (cd android && ./gradlew assembleRelease)
 
-# 8. Раскладка артефактов (единый префикс onsite-v<версия>). Заливку APK в Release делает publish-delivery.sh.
+# 9. Раскладка артефактов (единый префикс onsite-v<версия>). Заливку APK в Release делает publish-delivery.sh.
 echo "[build-android] копируем APK в dist…"
 cp android/app/build/outputs/apk/release/app-release.apk "dist/onsite-v${VERSION}.apk"
 
