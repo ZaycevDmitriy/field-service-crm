@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrdersStore } from '@/entities/order';
 import { deletePhoto, PhotoPreview } from '@/features/photo-capture';
 import { Spacing, useColors } from '@/shared/config';
+import { useGuardedBack } from '@/shared/lib/navigation';
 import { ScreenHeader } from '@/shared/ui';
 
 export interface IPhotoPreviewPageProps {
@@ -40,7 +41,7 @@ export const PhotoPreviewPage: FC<IPhotoPreviewPageProps> = ({ orderId, uri }) =
   }, [navigation, uri]);
 
   // «Назад» и «Переснять» — один возврат к экрану съёмки (он остаётся в стеке под card).
-  const handleBack = () => router.back();
+  const handleBack = useGuardedBack();
 
   const handleSave = (comment: string) => {
     // Guard двойного тапа: PhotoPreview блокирует свою кнопку по локальному saving-стейту, но за

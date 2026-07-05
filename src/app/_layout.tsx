@@ -12,6 +12,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
+import { sweepOrphanPhotos } from '@/features/photo-capture';
 import { Spacing, useColorScheme } from '@/shared/config';
 import { configureNotifications } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
@@ -23,6 +24,10 @@ export const unstable_settings = {
 
 // Авто-dismiss тоста, мс: короткое транзиентное сообщение об ошибке (PDR §11).
 const TOAST_DURATION_MS = 4000;
+
+// Все URI фото из гидрированного стора — вход для sweepOrphanPhotos.
+const getKnownPhotoUris = (): string[] =>
+  useOrdersStore.getState().orders.flatMap((order) => order.photos.map((photo) => photo.uri));
 
 // Глобальный контейнер тостов: подписан на toast-store, держит таймеры авто-dismiss и рендерит
 // презентационные Toast оверлеем поверх Stack. Живёт на слое app (легально читает shared/model) —
@@ -82,7 +87,20 @@ const RootLayout: FC = () => {
   // Однократный bootstrap БД при старте (не-реактивный getState): инициализация SQLite, идемпотентный
   // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
   useEffect(() => {
-    useOrdersStore.getState().initialize();
+    // Sweep осиротевших фото — строго ПОСЛЕ гидрации стора (список известных URI должен быть полным)
+    // и один раз за старт приложения (до открытия любых экранов съёмки).
+    useOrdersStore
+      .getState()
+      .initialize()
+      .then(() => {
+        const { error, loading } = useOrdersStore.getState();
+        // Sweep только при подтверждённо успешной гидрации: при сбое БД initialize резолвится с
+        // error и пустым стором, а StrictMode-дубль резолвится мгновенно (guard по loading), пока
+        // первый вызов ещё гидрирует, — в обоих случаях sweep снёс бы все реальные фото как сироты.
+        if (!error && !loading) {
+          sweepOrphanPhotos(getKnownPhotoUris());
+        }
+      });
     // Создаём Android-канал напоминаний до первого планирования (на iOS — true сразу). Module-level
     // setNotificationHandler уже выставлен самим импортом сегмента notifications. При сбое канала —
     // мягкое уведомление пользователю (напоминания могут не работать), приложение продолжает работать.

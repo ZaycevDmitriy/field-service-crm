@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Prepare-шаг релиза (вызывается из exec.prepareCmd в .releaserc.json) с маршрутизацией доставки.
-# Версия передаётся первым аргументом (`${nextRelease.version}`); versionCode = номер CI-прогона.
+# Версия передаётся первым аргументом (`${nextRelease.version}`); versionCode считается из версии
+# (см. M14 ниже).
 #
 # Решение OTA↔APK принимается ЗДЕСЬ по сравнению fingerprint текущего дерева с последним релизом:
 #   - нет предыдущего fingerprint (первый релиз)        → APK (OTA некуда доехать);
@@ -20,9 +21,18 @@ set -euo pipefail
 
 VERSION="${1:?usage: build-android.sh <version>}"
 
-# Проводка значений в app.config.ts (читает эти env с дефолтами). versionCode — монотонный номер прогона.
+# Проводка значений в app.config.ts (читает эти env с дефолтами).
+# versionCode (M14, аудит 2026-07-02): раньше был GITHUB_RUN_NUMBER — монотонный только пока прогонов
+# больше, чем версий, и не привязан к семверу вообще (произвольный номер CI-прогона). Теперь считается
+# из версии: major*10000 + minor*100 + patch (ограничение: patch/minor < 100 — semantic-release с
+# текущим темпом релизов этого не превысит). Разовый переход: новый код (напр. 1.2.2 → 10202) на
+# порядки больше исторических GITHUB_RUN_NUMBER (workflow Release: единицы прогонов), поэтому
+# INSTALL_FAILED_VERSION_DOWNGRADE от перехода не грозит — offset-константа не нужна.
+IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${VERSION}"
+ONSITE_VERSION_CODE=$((VERSION_MAJOR * 10000 + VERSION_MINOR * 100 + VERSION_PATCH))
+
 export ONSITE_VERSION="${VERSION}"
-export ONSITE_VERSION_CODE="${GITHUB_RUN_NUMBER:-1}"
+export ONSITE_VERSION_CODE
 export ONSITE_UPDATE_CHANNEL="${ONSITE_UPDATE_CHANNEL:-production}"
 
 echo "[build-android] START version=${ONSITE_VERSION} versionCode=${ONSITE_VERSION_CODE} channel=${ONSITE_UPDATE_CHANNEL}"
@@ -41,11 +51,32 @@ CURRENT="$(cat "${FINGERPRINT_FILE}")"
 echo "[build-android] runtimeVersion (current)=${CURRENT}"
 
 # 2. Fingerprint последнего релиза (ассет onsite-v<версия>.fingerprint.txt). prepare выполняется ДО
-#    создания нового тега/релиза, поэтому `gh release download` без тега берёт ПРЕДЫДУЩИЙ релиз.
+#    создания нового тега/релиза, поэтому `gh release view/download` без тега берёт ПРЕДЫДУЩИЙ релиз.
+# M13 (аудит 2026-07-02): раньше `gh release download … || true` глушил ЛЮБУЮ ошибку — «релиза ещё
+# нет» (легитимно для самого первого релиза) неотличимо от сетевого сбоя/сбоя авторизации (тогда PREV
+# молча становится "", и скрипт ошибочно решает, что это первый релиз → DELIVERY=apk). Явно разделяем:
+# `gh release view` без загрузки ассетов — дешёвая проверка, что релиз вообще существует.
 echo "[build-android] fetch fingerprint последнего релиза…"
 rm -rf prev-fp
-gh release download --pattern '*.fingerprint.txt' --dir prev-fp --repo "${GITHUB_REPOSITORY:-}" || true
-PREV="$(cat prev-fp/*.fingerprint.txt 2>/dev/null || true)"
+PREV_TAG=""
+VIEW_ERROR_FILE="$(mktemp)"
+# Один сетевой вызов: stdout (tagName) — в переменную, stderr — в файл для разбора причины сбоя.
+if PREV_TAG="$(gh release view --json tagName --jq '.tagName' --repo "${GITHUB_REPOSITORY:-}" 2>"${VIEW_ERROR_FILE}")"; then
+  mkdir -p prev-fp
+  # Релиз существует, но fingerprint-ассета может не быть (повреждённый/ручной релиз) — это не
+  # повод ронять релиз целиком: маршрутизируем на APK (PREV пуст), а не exit 1.
+  gh release download --pattern '*.fingerprint.txt' --dir prev-fp --repo "${GITHUB_REPOSITORY:-}" || true
+  PREV="$(cat prev-fp/*.fingerprint.txt 2>/dev/null || true)"
+  if [ -z "${PREV}" ]; then
+    echo "[build-android] у релиза ${PREV_TAG} нет fingerprint-ассета → фоллбэк на APK."
+  fi
+elif VIEW_ERROR="$(cat "${VIEW_ERROR_FILE}")" && echo "${VIEW_ERROR}" | grep -qi 'release not found'; then
+  echo "[build-android] release not found → это первый релиз репозитория."
+  PREV=""
+else
+  echo "::error::[build-android] gh release view упал не из-за отсутствия релиза: ${VIEW_ERROR}"
+  exit 1
+fi
 echo "[build-android] runtimeVersion (последний релиз)=${PREV:-<нет>}"
 
 # 3. Маршрутизация доставки.
@@ -68,7 +99,7 @@ echo "${DELIVERY}" > dist/.delivery
 #     маршрут на APK, чтобы у fingerprint появился хотя бы один реальный носитель.
 if [ "${DELIVERY}" = "ota" ]; then
   echo "[build-android] APK-guard: проверяю наличие APK-ассета у релиза-источника fingerprint…"
-  PREV_TAG="$(gh release view --json tagName --jq '.tagName' --repo "${GITHUB_REPOSITORY:-}" 2>/dev/null || true)"
+  # PREV_TAG уже получен в шаге 2 (DELIVERY=ota возможен только когда релиз найден, т.е. PREV_TAG непуст).
   if gh release view --json assets --jq '.assets[].name' --repo "${GITHUB_REPOSITORY:-}" 2>/dev/null \
     | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>process.exit(d.split('\n').some((n)=>n.endsWith('.apk'))?0:1))"; then
     echo "[build-android] APK-ассет у релиза-источника (${PREV_TAG:-<неизвестен>}) найден → OTA остаётся."

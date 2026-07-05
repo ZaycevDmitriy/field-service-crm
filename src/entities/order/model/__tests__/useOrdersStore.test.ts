@@ -3,6 +3,7 @@ import { ServiceOrderStatusEnum } from '../order-status';
 import type { IServiceOrder } from '../types';
 import { useOrdersStore } from '../useOrdersStore';
 
+import { cancelOrderRemindersByKey } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Изолируем стор от SQLite: orderDatabaseService — единственная сторонняя зависимость guard-ов
@@ -18,7 +19,14 @@ jest.mock('../../api', () => ({
   },
 }));
 
+// Изолируем стор от expo-notifications: cancelOrderRemindersByKey (M6) — единственная зависимость
+// сегмента notifications, которая нужна переходам статуса.
+jest.mock('@/shared/lib/notifications', () => ({
+  cancelOrderRemindersByKey: jest.fn(),
+}));
+
 const mockedService = orderDatabaseService as jest.Mocked<typeof orderDatabaseService>;
+const mockedCancelReminders = cancelOrderRemindersByKey as jest.Mock;
 
 // Фабрика фикстур (совпадает с конвенцией getNearestOrder.test.ts): дефолт — активная заявка.
 const makeOrder = (overrides: Partial<IServiceOrder> = {}): IServiceOrder => ({
@@ -46,6 +54,7 @@ describe('useOrdersStore', () => {
     mockedService.updateOrderStatus.mockResolvedValue(undefined);
     mockedService.addOrderPhoto.mockResolvedValue(undefined);
     resetStore();
+    useToastStore.setState({ toasts: [] });
   });
 
   describe('startWork', () => {
@@ -68,6 +77,32 @@ describe('useOrdersStore', () => {
 
       expect(useOrdersStore.getState().orders).toHaveLength(0);
       expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
+    });
+
+    it('откатывает статус к исходному при отклонении персиста и показывает тост (M1)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().startWork('order-1');
+      expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
+
+      await Promise.resolve().then().then().then();
+
+      expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.New);
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
+    });
+
+    it('не откатывает статус, если до отклонения уже произошёл следующий переход (гонка)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().startWork('order-1');
+      // Пользователь успел перевести заявку дальше до того, как reject startWork долетел.
+      useOrdersStore.getState().completeWork('order-1');
+
+      await Promise.resolve().then().then().then();
+
+      expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.Done);
     });
 
     it.each([
@@ -109,6 +144,35 @@ describe('useOrdersStore', () => {
       expect(useOrdersStore.getState().orders[0].status).toBe(status);
       expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
     });
+
+    it('отменяет напоминание по заявке после успешного персиста перехода (M6)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
+
+      useOrdersStore.getState().completeWork('order-1');
+
+      await Promise.resolve().then().then().then();
+
+      expect(mockedCancelReminders).toHaveBeenCalledWith('order-1');
+    });
+
+    it('не отменяет напоминание при отклонении персиста — статус откатывается, заявка снова активна', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
+      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().completeWork('order-1');
+
+      await Promise.resolve().then().then().then();
+
+      expect(mockedCancelReminders).not.toHaveBeenCalled();
+    });
+
+    it('не отменяет напоминание, если переход отклонён guard-ом (M6)', () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+
+      useOrdersStore.getState().completeWork('order-1');
+
+      expect(mockedCancelReminders).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancelOrder', () => {
@@ -134,6 +198,24 @@ describe('useOrdersStore', () => {
         expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
       },
     );
+
+    it('отменяет напоминание по заявке после успешного персиста отмены (M6)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+
+      useOrdersStore.getState().cancelOrder('order-1');
+
+      await Promise.resolve().then().then().then();
+
+      expect(mockedCancelReminders).toHaveBeenCalledWith('order-1');
+    });
+
+    it('не отменяет напоминание, если отмена — no-op (заявка уже закрыта) (M6)', () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.Done })]);
+
+      useOrdersStore.getState().cancelOrder('order-1');
+
+      expect(mockedCancelReminders).not.toHaveBeenCalled();
+    });
   });
 
   describe('addOrderPhoto', () => {
@@ -171,6 +253,19 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().addOrderPhoto('missing', { uri: PHOTO_URI });
 
       expect(mockedService.addOrderPhoto).not.toHaveBeenCalled();
+    });
+
+    it('убирает фото из стора при отклонении персиста (M1)', async () => {
+      resetStore([makeOrder()]);
+      mockedService.addOrderPhoto.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().addOrderPhoto('order-1', { uri: PHOTO_URI });
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(1);
+
+      await Promise.resolve().then().then().then();
+
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(0);
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
     });
   });
 

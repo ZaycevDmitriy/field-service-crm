@@ -2,7 +2,7 @@ import { File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { MOCK_SERVICE_ORDERS } from '../model/mock';
-import { ServiceOrderStatusEnum } from '../model/order-status';
+import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
@@ -96,10 +96,22 @@ export const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   createdAt: row.created_at,
 });
 
+// Невалидный статус (повреждённая строка, ручное редактирование БД) не должен ронять рендер списка —
+// заявка остаётся видимой и рабочей с фоллбэком на New.
+const resolveOrderStatus = (rawStatus: string): ServiceOrderStatusEnum => {
+  if (isServiceOrderStatus(rawStatus)) {
+    return rawStatus;
+  }
+  logger.warn('[orderDatabaseService.rowToOrder] Невалидный статус заявки, фоллбэк на New.', {
+    status: rawStatus,
+  });
+
+  return ServiceOrderStatusEnum.New;
+};
+
 export const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
   id: row.id,
-  // В колонке хранятся значения ServiceOrderStatusEnum (запись контролируется сервисом).
-  status: row.status as ServiceOrderStatusEnum,
+  status: resolveOrderStatus(row.status),
   title: row.title,
   client: row.client,
   address: row.address,

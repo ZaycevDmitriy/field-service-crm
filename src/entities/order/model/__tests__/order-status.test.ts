@@ -1,4 +1,4 @@
-import { OrderStatusLabel, ServiceOrderStatusEnum } from '../order-status';
+import { isServiceOrderStatus, OrderStatusLabel, ServiceOrderStatusEnum } from '../order-status';
 
 describe('OrderStatusLabel', () => {
   it.each([
@@ -20,5 +20,15 @@ describe('OrderStatusLabel', () => {
     for (const label of Object.values(OrderStatusLabel)) {
       expect(label.trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('isServiceOrderStatus', () => {
+  it.each(Object.values(ServiceOrderStatusEnum))('%s — валидный статус', (status) => {
+    expect(isServiceOrderStatus(status)).toBe(true);
+  });
+
+  it.each(['Unknown', '', 'new', 'DONE'])('"%s" — невалидный статус', (value) => {
+    expect(isServiceOrderStatus(value)).toBe(false);
   });
 });
