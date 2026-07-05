@@ -1,7 +1,7 @@
 import { orderDatabaseService } from '../../api';
 import { ServiceOrderStatusEnum } from '../order-status';
 import type { IServiceOrder } from '../types';
-import { useOrdersStore } from '../useOrdersStore';
+import { useOrdersStore } from '../use-orders-store';
 
 import { cancelOrderRemindersByKey } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
@@ -319,6 +319,48 @@ describe('useOrdersStore', () => {
 
       expect(mockedService.clearDatabase).not.toHaveBeenCalled();
       expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Info }]);
+    });
+  });
+
+  // L3: под STRESS_TEST стор наполнен синтетикой мимо БД — все точки, которые обычно персистят/читают
+  // через orderDatabaseService, должны быть no-op по отношению к БД (мок модуля ./stress).
+  describe('STRESS_TEST guard (L3)', () => {
+    it('startWork/addOrderPhoto/loadOrders/clearDatabase не обращаются к БД', async () => {
+      let stressStore!: typeof useOrdersStore;
+      let stressService!: typeof mockedService;
+
+      jest.isolateModules(() => {
+        jest.doMock('../stress', () => ({
+          STRESS_TEST: true,
+          STRESS_TEST_COUNT: 3,
+          makeStressOrders: (count: number) =>
+            Array.from({ length: count }, (_, i) =>
+              makeOrder({ id: `stress-${i}`, status: ServiceOrderStatusEnum.New }),
+            ),
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressStore = require('../use-orders-store').useOrdersStore;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressService = require('../../api').orderDatabaseService;
+      });
+
+      await stressStore.getState().initialize();
+      expect(stressStore.getState().orders).toHaveLength(3);
+      expect(stressService.initDatabase).not.toHaveBeenCalled();
+      expect(stressService.seedDatabaseIfNeeded).not.toHaveBeenCalled();
+
+      stressStore.getState().startWork('stress-0');
+      expect(stressStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
+      expect(stressService.updateOrderStatus).not.toHaveBeenCalled();
+
+      stressStore.getState().addOrderPhoto('stress-1', { uri: 'file://photo.jpg' });
+      expect(stressService.addOrderPhoto).not.toHaveBeenCalled();
+
+      await stressStore.getState().loadOrders();
+      expect(stressService.getOrders).not.toHaveBeenCalled();
+
+      await stressStore.getState().clearDatabase();
+      expect(stressService.clearDatabase).not.toHaveBeenCalled();
     });
   });
 });

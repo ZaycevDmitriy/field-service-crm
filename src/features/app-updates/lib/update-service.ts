@@ -62,9 +62,10 @@ export async function checkForUpdate(): Promise<IUpdateCheckOutcome> {
     // Проверка нашла обновление, но скачивать оказалось нечего — считаем версию актуальной.
     return { status: UpdateOutcomeEnum.UpToDate, message: null };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось проверить обновления.';
-    logger.error(`${LOG_TAG} checkForUpdate: ошибка →`, message);
-    return { status: UpdateOutcomeEnum.Failed, message };
+    // Полный объект ошибки — только в лог; в UI (Settings через useAppUpdates) уходит фиксированное
+    // сообщение без технических деталей (сырой error.message мог содержать нативный текст expo-updates).
+    logger.error(`${LOG_TAG} checkForUpdate: ошибка →`, error);
+    return { status: UpdateOutcomeEnum.Failed, message: 'Не удалось проверить обновления.' };
   }
 }
 
@@ -80,8 +81,9 @@ export async function reloadApp(): Promise<void> {
   try {
     await Updates.reloadAsync();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось перезагрузить приложение.';
-    logger.error(`${LOG_TAG} reloadApp: ошибка →`, message);
-    throw error instanceof Error ? error : new Error(message);
+    // Полный объект ошибки — только в лог; вызывающему (useAppUpdates → Settings) уходит фиксированное
+    // сообщение без технических деталей (сырой error.message мог содержать нативный текст expo-updates).
+    logger.error(`${LOG_TAG} reloadApp: ошибка →`, error);
+    throw new Error('Не удалось перезагрузить приложение.');
   }
 }

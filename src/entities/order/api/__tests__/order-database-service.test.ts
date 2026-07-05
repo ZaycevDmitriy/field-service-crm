@@ -9,10 +9,10 @@ import {
   rowToPhoto,
   toRuntimeUri,
   toStoredUri,
-} from '../orderDatabaseService';
+} from '../order-database-service';
+import { MOCK_SERVICE_ORDERS } from '../../model/mock';
+import { ServiceOrderStatusEnum } from '../../model/order-status';
 
-import { MOCK_SERVICE_ORDERS } from '@/entities/order/model/mock';
-import { ServiceOrderStatusEnum } from '@/entities/order/model/order-status';
 import { getDatabase } from '@/shared/lib/db';
 import { logger } from '@/shared/lib/logger';
 
@@ -342,12 +342,23 @@ describe('orderDatabaseService.getOrders', () => {
   });
 });
 
+interface IMockClearDatabase {
+  getAllAsync: jest.Mock;
+  execAsync: jest.Mock;
+  withExclusiveTransactionAsync: jest.Mock;
+}
+
 describe('orderDatabaseService.clearDatabase', () => {
-  const mockDatabase = {
+  // Тот же самореференсный паттерн, что в getOrders/migrateOrdersSchema: withExclusiveTransactionAsync
+  // вызывает колбэк с txn = сам mockDatabase, поэтому getAllAsync/execAsync внутри него видны напрямую.
+  const mockDatabase: IMockClearDatabase = {
     getAllAsync: jest.fn(),
     execAsync: jest.fn(async () => {
       mockCallOrder.push('execAsync');
     }),
+    withExclusiveTransactionAsync: jest.fn(async (task: (txn: unknown) => Promise<void>) =>
+      task(mockDatabase),
+    ),
   };
 
   beforeEach(() => {

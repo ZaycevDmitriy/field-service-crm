@@ -4,7 +4,7 @@ import { type FC, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { photoService } from '../lib/photoService';
+import { photoService } from '../lib/photo-service';
 
 import { Radius, Spacing } from '@/shared/config';
 import { logger } from '@/shared/lib/logger';

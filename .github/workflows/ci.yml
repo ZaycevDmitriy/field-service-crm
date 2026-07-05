@@ -31,10 +31,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      # Бинарь actionlint и его версия запинены детерминированно (скрипт по тегу + версия аргументом).
+      # Бинарь actionlint и его версия запинены детерминированно; сам download-скрипт скачивается
+      # по коммит-SHA тега v1.7.12 (не по мутабельному тегу — тег можно перевесить на другой коммит,
+      # SHA нет, L17 аудита 2026-07-02), версия бинаря — аргументом.
       # actionlint сам прогоняет shellcheck по всем `run:`-блокам (shellcheck предустановлен на ubuntu-latest).
       - name: Run actionlint
         run: |
-          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash -o download-actionlint.bash
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash -o download-actionlint.bash
           bash download-actionlint.bash 1.7.12
           ./actionlint -color

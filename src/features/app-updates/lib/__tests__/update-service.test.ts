@@ -17,7 +17,7 @@ function loadIsOtaEnabled(): boolean {
   // Динамический require: модульный флаг переоценивается только после resetModules — статический
   // import закэшировался бы и кейсы делили бы одно значение.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('../updateService') as typeof import('../updateService')).isOtaEnabled;
+  return (require('../update-service') as typeof import('../update-service')).isOtaEnabled;
 }
 
 describe('isOtaEnabled', () => {

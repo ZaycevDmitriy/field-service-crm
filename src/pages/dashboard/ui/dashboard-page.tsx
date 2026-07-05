@@ -12,7 +12,7 @@ import { openMapsRoute } from '@/features/open-route';
 import { Spacing } from '@/shared/config';
 import { formatTimeUntil } from '@/shared/lib/date';
 import { useCurrentLocation } from '@/shared/lib/location';
-import { useAppStore } from '@/shared/model';
+import { ToastVariantEnum, useAppStore, useToastStore } from '@/shared/model';
 import { Screen, Text } from '@/shared/ui';
 
 // Экран «Главная»: шапка, статистика дня, hero ближайшей заявки и быстрые действия.
@@ -55,6 +55,11 @@ export const DashboardPage: FC = () => {
       void openMapsRoute(nearestOrder);
     }
   };
+  // Быстрые действия пока нефункциональны (создание заявки — Phase 3, скан — Phase 5) — честный
+  // фидбек тостом вместо молчаливого нажатия (L11).
+  const handleQuickActionComingSoon = () => {
+    useToastStore.getState().showToast(ToastVariantEnum.Info, 'Будет доступно в следующей версии');
+  };
 
   return (
     <Screen scrollable>
@@ -78,11 +83,17 @@ export const DashboardPage: FC = () => {
             Быстрые действия
           </Text>
           <View style={styles.quickGrid}>
-            <QuickActionButton icon="plus" title="Новая заявка" subtitle="Создать вручную" />
+            <QuickActionButton
+              icon="plus"
+              title="Новая заявка"
+              subtitle="Создать вручную"
+              onPress={handleQuickActionComingSoon}
+            />
             <QuickActionButton
               icon="qrcode.viewfinder"
               title="Сканировать"
               subtitle="QR-код заявки"
+              onPress={handleQuickActionComingSoon}
             />
           </View>
         </View>
