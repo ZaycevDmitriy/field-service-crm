@@ -67,13 +67,19 @@ const persistStatus = (
   from: ServiceOrderStatusEnum,
   to: ServiceOrderStatusEnum,
   action: string,
+  onPersisted?: () => void,
 ): void => {
   // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
-  orderDatabaseService.updateOrderStatus(orderId, to).catch((error) => {
-    logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
-    useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
-    set((state) => ({ orders: transitionStatus(state.orders, orderId, to, from) }));
-  });
+  orderDatabaseService
+    .updateOrderStatus(orderId, to)
+    // Побочные эффекты закрытия заявки (отмена напоминания) — только после успешного персиста:
+    // при откате статуса заявка снова активна, и напоминание должно остаться.
+    .then(() => onPersisted?.())
+    .catch((error) => {
+      logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
+      set((state) => ({ orders: transitionStatus(state.orders, orderId, to, from) }));
+    });
 };
 
 export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
@@ -172,9 +178,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       ServiceOrderStatusEnum.InProgress,
       ServiceOrderStatusEnum.Done,
       'completeWork',
+      // Заявка закрыта — напоминание больше не нужно (cancelOrderRemindersByKey не бросает).
+      () => void cancelOrderRemindersByKey(orderId),
     );
-    // Заявка закрыта — напоминание по ней больше не нужно (cancelOrderRemindersByKey не бросает).
-    void cancelOrderRemindersByKey(orderId);
   },
 
   // Отмена допустима только для активной заявки (New/InProgress); Done/Cancelled — no-op.
@@ -198,9 +204,15 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
         ServiceOrderStatusEnum.Cancelled,
       ),
     });
-    persistStatus(set, orderId, previousStatus, ServiceOrderStatusEnum.Cancelled, 'cancelOrder');
-    // Заявка отменена — напоминание по ней больше не нужно (cancelOrderRemindersByKey не бросает).
-    void cancelOrderRemindersByKey(orderId);
+    persistStatus(
+      set,
+      orderId,
+      previousStatus,
+      ServiceOrderStatusEnum.Cancelled,
+      'cancelOrder',
+      // Заявка отменена — напоминание больше не нужно (cancelOrderRemindersByKey не бросает).
+      () => void cancelOrderRemindersByKey(orderId),
+    );
   },
 
   addOrderPhoto: (orderId, { uri, comment }) => {

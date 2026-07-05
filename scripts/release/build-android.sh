@@ -59,12 +59,18 @@ echo "[build-android] runtimeVersion (current)=${CURRENT}"
 echo "[build-android] fetch fingerprint последнего релиза…"
 rm -rf prev-fp
 PREV_TAG=""
-if VIEW_ERROR="$(gh release view --json tagName --repo "${GITHUB_REPOSITORY:-}" 2>&1 >/dev/null)"; then
-  PREV_TAG="$(gh release view --json tagName --jq '.tagName' --repo "${GITHUB_REPOSITORY:-}")"
+VIEW_ERROR_FILE="$(mktemp)"
+# Один сетевой вызов: stdout (tagName) — в переменную, stderr — в файл для разбора причины сбоя.
+if PREV_TAG="$(gh release view --json tagName --jq '.tagName' --repo "${GITHUB_REPOSITORY:-}" 2>"${VIEW_ERROR_FILE}")"; then
   mkdir -p prev-fp
-  gh release download --pattern '*.fingerprint.txt' --dir prev-fp --repo "${GITHUB_REPOSITORY:-}"
+  # Релиз существует, но fingerprint-ассета может не быть (повреждённый/ручной релиз) — это не
+  # повод ронять релиз целиком: маршрутизируем на APK (PREV пуст), а не exit 1.
+  gh release download --pattern '*.fingerprint.txt' --dir prev-fp --repo "${GITHUB_REPOSITORY:-}" || true
   PREV="$(cat prev-fp/*.fingerprint.txt 2>/dev/null || true)"
-elif echo "${VIEW_ERROR}" | grep -qi 'release not found'; then
+  if [ -z "${PREV}" ]; then
+    echo "[build-android] у релиза ${PREV_TAG} нет fingerprint-ассета → фоллбэк на APK."
+  fi
+elif VIEW_ERROR="$(cat "${VIEW_ERROR_FILE}")" && echo "${VIEW_ERROR}" | grep -qi 'release not found'; then
   echo "[build-android] release not found → это первый релиз репозитория."
   PREV=""
 else

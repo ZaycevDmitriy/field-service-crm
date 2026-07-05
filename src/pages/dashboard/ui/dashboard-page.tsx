@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { type FC, useMemo } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { type FC, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { DashboardHeader } from './dashboard-header';
@@ -29,10 +29,18 @@ export const DashboardPage: FC = () => {
     () => getNearestOrder(orders, currentLocation),
     [orders, currentLocation],
   );
+  // Точка отсчёта интервала (epoch ms, правило «Даты и время»): обновляется на каждом фокусе
+  // экрана — иначе label устаревает, пока дашборд открыт/в фоне таба.
+  const [now, setNow] = useState(() => Date.now());
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+    }, []),
+  );
   // new Date() — не в render-пути списков (правило «Даты и время»), допустимо в useMemo одного hero-блока.
   const timeUntilLabel = useMemo(
-    () => (nearestOrder ? formatTimeUntil(nearestOrder.scheduledTime) : null),
-    [nearestOrder],
+    () => (nearestOrder ? formatTimeUntil(nearestOrder.scheduledTime, new Date(now)) : null),
+    [nearestOrder, now],
   );
 
   const handleOpenNearest = () => {

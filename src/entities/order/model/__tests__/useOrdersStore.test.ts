@@ -145,12 +145,25 @@ describe('useOrdersStore', () => {
       expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
     });
 
-    it('отменяет напоминание по заявке при успешном переходе (M6)', () => {
+    it('отменяет напоминание по заявке после успешного персиста перехода (M6)', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
 
       useOrdersStore.getState().completeWork('order-1');
 
+      await Promise.resolve().then().then().then();
+
       expect(mockedCancelReminders).toHaveBeenCalledWith('order-1');
+    });
+
+    it('не отменяет напоминание при отклонении персиста — статус откатывается, заявка снова активна', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
+      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().completeWork('order-1');
+
+      await Promise.resolve().then().then().then();
+
+      expect(mockedCancelReminders).not.toHaveBeenCalled();
     });
 
     it('не отменяет напоминание, если переход отклонён guard-ом (M6)', () => {
@@ -186,10 +199,12 @@ describe('useOrdersStore', () => {
       },
     );
 
-    it('отменяет напоминание по заявке при успешной отмене (M6)', () => {
+    it('отменяет напоминание по заявке после успешного персиста отмены (M6)', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
 
       useOrdersStore.getState().cancelOrder('order-1');
+
+      await Promise.resolve().then().then().then();
 
       expect(mockedCancelReminders).toHaveBeenCalledWith('order-1');
     });
