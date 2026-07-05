@@ -3,6 +3,8 @@ import { type ComponentProps, type FC, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PhotoViewerModal } from './photo-viewer-modal';
+
 import {
   OrderPhotoList,
   OrderStatusBadge,
@@ -22,6 +24,19 @@ export interface IOrderDetailsPageProps {
 }
 
 type IconName = ComponentProps<typeof IconSymbol>['name'];
+
+// Текст пустого состояния фотоотчёта по статусу заявки: добавлять фото можно только в работе,
+// для остальных статусов — объясняем, почему кнопки нет.
+const resolvePhotoEmptyText = (isInProgress: boolean, isNew: boolean): string => {
+  if (isInProgress) {
+    return 'Сделайте фото после выполнения работы';
+  }
+  if (isNew) {
+    return 'Фото можно будет добавить после начала работы';
+  }
+
+  return 'Фотографии не добавлялись';
+};
 
 // Иконочная плитка 36×36 для строк секций «Адрес»/«Время».
 const InfoTile: FC<{ icon: IconName }> = ({ icon }) => {
@@ -43,6 +58,10 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const [ctaHeight, setCtaHeight] = useState(0);
   // Заявка из стора по id (один объект — без useShallow). Смена статуса меняет ссылку → реактивный ре-рендер.
   const order = useOrdersStore((state) => state.orders.find((item) => item.id === orderId));
+  const removeOrderPhoto = useOrdersStore((state) => state.removeOrderPhoto);
+  // Просмотр фото: храним только id — сам объект выводится из стора, чтобы после удаления модалка
+  // закрылась реактивно (фото исчезает из заявки → selectedPhoto === null).
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   // Хук actions вызывается безусловно (до early return) — правила хуков; orderId всегда есть.
   const { startWork, completeWork, cancelOrder } = useOrderStatusActions(orderId);
   // Дистанция — производное от текущей локации; хук терпит undefined order (вызов до early return).
@@ -63,9 +82,25 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
   const isInProgress = order.status === ServiceOrderStatusEnum.InProgress;
   const hasCta = isNew || isInProgress;
   const hasPhotos = order.photos.length > 0;
+  const selectedPhoto = order.photos.find((photo) => photo.id === selectedPhotoId) ?? null;
 
   const handleAddPhoto = () => {
     router.navigate({ pathname: '/camera/[orderId]', params: { orderId: order.id } });
+  };
+
+  // Подтверждение перед необратимым удалением фото (тот же паттерн, что handleCancelOrder ниже).
+  const handleDeletePhoto = (photoId: string) => {
+    Alert.alert('Удалить фото?', 'Действие нельзя будет отменить.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: () => {
+          removeOrderPhoto(order.id, photoId);
+          setSelectedPhotoId(null);
+        },
+      },
+    ]);
   };
 
   // Подтверждение перед необратимой отменой заявки (по образцу handleClearDatabase, settings-page.tsx).
@@ -141,17 +176,24 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
           <View style={styles.sectionColumn}>
             {hasPhotos ? (
               <>
-                <OrderPhotoList photos={order.photos} />
+                <OrderPhotoList
+                  photos={order.photos}
+                  onPhotoPress={(photo) => setSelectedPhotoId(photo.id)}
+                />
                 <Text size="13" color="textSecondary" style={styles.photoCount}>
                   {order.photos.length} фото
                 </Text>
-                <Button
-                  title="Добавить фото"
-                  variant="secondary"
-                  fullWidth
-                  onPress={handleAddPhoto}
-                  leftIcon={<IconSymbol name="camera.fill" size={18} color={colors.textPrimary} />}
-                />
+                {isInProgress ? (
+                  <Button
+                    title="Добавить фото"
+                    variant="secondary"
+                    fullWidth
+                    onPress={handleAddPhoto}
+                    leftIcon={
+                      <IconSymbol name="camera.fill" size={18} color={colors.textPrimary} />
+                    }
+                  />
+                ) : null}
               </>
             ) : (
               <>
@@ -160,16 +202,18 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
                     <IconSymbol name="camera.fill" size={20} color={colors.textSecondary} />
                   </View>
                   <Text size="sm" color="textSecondary" style={styles.dashedText}>
-                    Сделайте фото после выполнения работы
+                    {resolvePhotoEmptyText(isInProgress, isNew)}
                   </Text>
                 </View>
-                <Button
-                  title="Добавить фото"
-                  variant="secondary"
-                  fullWidth
-                  onPress={handleAddPhoto}
-                  leftIcon={<IconSymbol name="plus" size={18} color={colors.textPrimary} />}
-                />
+                {isInProgress ? (
+                  <Button
+                    title="Добавить фото"
+                    variant="secondary"
+                    fullWidth
+                    onPress={handleAddPhoto}
+                    leftIcon={<IconSymbol name="plus" size={18} color={colors.textPrimary} />}
+                  />
+                ) : null}
               </>
             )}
           </View>
@@ -219,6 +263,13 @@ export const OrderDetailsPage: FC<IOrderDetailsPageProps> = ({ orderId }) => {
           )}
         </View>
       ) : null}
+
+      <PhotoViewerModal
+        photo={selectedPhoto}
+        canDelete={isInProgress}
+        onDelete={handleDeletePhoto}
+        onClose={() => setSelectedPhotoId(null)}
+      />
     </View>
   );
 };

@@ -15,6 +15,7 @@ jest.mock('../../api', () => ({
     getOrders: jest.fn(),
     updateOrderStatus: jest.fn(),
     addOrderPhoto: jest.fn(),
+    deleteOrderPhoto: jest.fn(),
     clearDatabase: jest.fn(),
   },
 }));
@@ -27,6 +28,9 @@ jest.mock('@/shared/lib/notifications', () => ({
 
 const mockedService = orderDatabaseService as jest.Mocked<typeof orderDatabaseService>;
 const mockedCancelReminders = cancelOrderRemindersByKey as jest.Mock;
+
+// URI снимка для тестов фотоотчёта (общий для addOrderPhoto/removeOrderPhoto/STRESS_TEST).
+const PHOTO_URI = 'file://photo.jpg';
 
 // Фабрика фикстур (совпадает с конвенцией getNearestOrder.test.ts): дефолт — активная заявка.
 const makeOrder = (overrides: Partial<IServiceOrder> = {}): IServiceOrder => ({
@@ -53,6 +57,7 @@ describe('useOrdersStore', () => {
     jest.clearAllMocks();
     mockedService.updateOrderStatus.mockResolvedValue(undefined);
     mockedService.addOrderPhoto.mockResolvedValue(undefined);
+    mockedService.deleteOrderPhoto.mockResolvedValue(undefined);
     resetStore();
     useToastStore.setState({ toasts: [] });
   });
@@ -219,10 +224,11 @@ describe('useOrdersStore', () => {
   });
 
   describe('addOrderPhoto', () => {
-    const PHOTO_URI = 'file://photo.jpg';
+    // Фото редактируются только у заявки в работе — фикстуры по умолчанию InProgress.
+    const makeInProgressOrder = () => makeOrder({ status: ServiceOrderStatusEnum.InProgress });
 
     it('добавляет фото и обрезает комментарий', () => {
-      resetStore([makeOrder()]);
+      resetStore([makeInProgressOrder()]);
 
       useOrdersStore.getState().addOrderPhoto('order-1', {
         uri: PHOTO_URI,
@@ -238,7 +244,7 @@ describe('useOrdersStore', () => {
     it.each(['', '   '])(
       'пустой/пробельный комментарий (%j) не создаёт ключ comment',
       (comment) => {
-        resetStore([makeOrder()]);
+        resetStore([makeInProgressOrder()]);
 
         useOrdersStore.getState().addOrderPhoto('order-1', { uri: PHOTO_URI, comment });
 
@@ -255,8 +261,21 @@ describe('useOrdersStore', () => {
       expect(mockedService.addOrderPhoto).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ServiceOrderStatusEnum.New,
+      ServiceOrderStatusEnum.Done,
+      ServiceOrderStatusEnum.Cancelled,
+    ])('no-op, если статус заявки %s (не InProgress)', (status) => {
+      resetStore([makeOrder({ status })]);
+
+      useOrdersStore.getState().addOrderPhoto('order-1', { uri: PHOTO_URI });
+
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(0);
+      expect(mockedService.addOrderPhoto).not.toHaveBeenCalled();
+    });
+
     it('убирает фото из стора при отклонении персиста (M1)', async () => {
-      resetStore([makeOrder()]);
+      resetStore([makeInProgressOrder()]);
       mockedService.addOrderPhoto.mockRejectedValueOnce(new Error('db fail'));
 
       useOrdersStore.getState().addOrderPhoto('order-1', { uri: PHOTO_URI });
@@ -265,6 +284,61 @@ describe('useOrdersStore', () => {
       await Promise.resolve().then().then().then();
 
       expect(useOrdersStore.getState().orders[0].photos).toHaveLength(0);
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
+    });
+  });
+
+  describe('removeOrderPhoto', () => {
+    const PHOTO = {
+      id: 'photo-1',
+      uri: PHOTO_URI,
+      comment: 'Готово',
+      createdAt: '2026-07-05T10:00:00.000Z',
+    };
+    const makeOrderWithPhoto = (
+      status: ServiceOrderStatusEnum = ServiceOrderStatusEnum.InProgress,
+    ) => makeOrder({ status, photos: [PHOTO] });
+
+    it('удаляет фото из стора и персистит удаление', () => {
+      resetStore([makeOrderWithPhoto()]);
+
+      useOrdersStore.getState().removeOrderPhoto('order-1', 'photo-1');
+
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(0);
+      expect(mockedService.deleteOrderPhoto).toHaveBeenCalledWith('photo-1');
+    });
+
+    it.each([
+      ServiceOrderStatusEnum.New,
+      ServiceOrderStatusEnum.Done,
+      ServiceOrderStatusEnum.Cancelled,
+    ])('no-op, если статус заявки %s (не InProgress)', (status) => {
+      resetStore([makeOrderWithPhoto(status)]);
+
+      useOrdersStore.getState().removeOrderPhoto('order-1', 'photo-1');
+
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(1);
+      expect(mockedService.deleteOrderPhoto).not.toHaveBeenCalled();
+    });
+
+    it('no-op, если фото не найдено', () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
+
+      useOrdersStore.getState().removeOrderPhoto('order-1', 'missing');
+
+      expect(mockedService.deleteOrderPhoto).not.toHaveBeenCalled();
+    });
+
+    it('возвращает фото в заявку при отклонении персиста и показывает тост', async () => {
+      resetStore([makeOrderWithPhoto()]);
+      mockedService.deleteOrderPhoto.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().removeOrderPhoto('order-1', 'photo-1');
+      expect(useOrdersStore.getState().orders[0].photos).toHaveLength(0);
+
+      await Promise.resolve().then().then().then();
+
+      expect(useOrdersStore.getState().orders[0].photos).toMatchObject([{ id: 'photo-1' }]);
       expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
     });
   });
@@ -353,8 +427,16 @@ describe('useOrdersStore', () => {
       expect(stressStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
       expect(stressService.updateOrderStatus).not.toHaveBeenCalled();
 
-      stressStore.getState().addOrderPhoto('stress-1', { uri: 'file://photo.jpg' });
+      // Фото добавляется/удаляется на InProgress-заявке (stress-0 после startWork) — иначе guard
+      // статуса среагирует раньше STRESS-ветки и тест не проверит пропуск персиста.
+      stressStore.getState().addOrderPhoto('stress-0', { uri: PHOTO_URI });
+      expect(stressStore.getState().orders[0].photos).toHaveLength(1);
       expect(stressService.addOrderPhoto).not.toHaveBeenCalled();
+
+      const [stressPhoto] = stressStore.getState().orders[0].photos;
+      stressStore.getState().removeOrderPhoto('stress-0', stressPhoto.id);
+      expect(stressStore.getState().orders[0].photos).toHaveLength(0);
+      expect(stressService.deleteOrderPhoto).not.toHaveBeenCalled();
 
       await stressStore.getState().loadOrders();
       expect(stressService.getOrders).not.toHaveBeenCalled();

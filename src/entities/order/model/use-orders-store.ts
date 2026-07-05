@@ -33,10 +33,27 @@ export interface IOrdersStore {
   cancelOrder: (orderId: string) => void;
   // Добавляет фото к заявке. Доменную сборку (id/createdAt) делает стор; вход — абсолютный URI снимка
   // и опциональный комментарий. Оптимистичный апдейт + fire-and-forget персист (как переходы статуса).
+  // Доменное правило: фотоотчёт редактируется только у заявки в работе (InProgress), иначе no-op.
   addOrderPhoto: (orderId: string, photo: { uri: string; comment?: string }) => void;
+  // Удаляет фото заявки (строку БД и файл — через orderDatabaseService). То же доменное правило:
+  // только InProgress. Оптимистичный апдейт + fire-and-forget персист с откатом при сбое.
+  removeOrderPhoto: (orderId: string, photoId: string) => void;
   // Очистка локальной БД (Settings): обе таблицы пусты, список → EmptyState. Повторный сид — следующий старт.
   clearDatabase: () => Promise<void>;
 }
+
+// Иммутабельно возвращает фото в заявку (в конец списка), если его там нет — откат оптимистичного
+// removeOrderPhoto. Проверка по id страхует от дубля, если фото успели вернуть/добавить заново.
+const restorePhoto = (
+  orders: IServiceOrder[],
+  orderId: string,
+  photo: IServiceOrderPhoto,
+): IServiceOrder[] =>
+  orders.map((order) =>
+    order.id === orderId && !order.photos.some((existing) => existing.id === photo.id)
+      ? { ...order, photos: [...order.photos, photo] }
+      : order,
+  );
 
 // Иммутабельно убирает фото с заданным id из заявки (откат оптимистичного addOrderPhoto).
 const removePhoto = (orders: IServiceOrder[], orderId: string, photoId: string): IServiceOrder[] =>
@@ -233,7 +250,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
 
   addOrderPhoto: (orderId, { uri, comment }) => {
     const order = get().orders.find((item) => item.id === orderId);
-    if (!order) {
+    // Guard доменного правила: фото добавляются только к заявке в работе (страхует и от гонки —
+    // статус мог смениться, пока пользователь был на экране камеры).
+    if (!order || order.status !== ServiceOrderStatusEnum.InProgress) {
       return;
     }
     // Комментарий кладём только если он непустой (домен: отсутствие ключа вместо пустой строки).
@@ -262,6 +281,32 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       // Откат оптимистичного добавления: убираем именно это фото по id (другие фото заявки,
       // добавленные за это время, не затрагиваются).
       set((state) => ({ orders: removePhoto(state.orders, orderId, photo.id) }));
+    });
+  },
+
+  removeOrderPhoto: (orderId, photoId) => {
+    const order = get().orders.find((item) => item.id === orderId);
+    // Guard доменного правила: фотоотчёт редактируется только у заявки в работе (см. addOrderPhoto).
+    if (!order || order.status !== ServiceOrderStatusEnum.InProgress) {
+      return;
+    }
+    const photo = order.photos.find((item) => item.id === photoId);
+    if (!photo) {
+      return;
+    }
+    set({ orders: removePhoto(get().orders, orderId, photoId) });
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — персист удаления пропускается.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.removeOrderPhoto] STRESS_TEST: персист удаления пропущен.');
+
+      return;
+    }
+    // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
+    orderDatabaseService.deleteOrderPhoto(photoId).catch((error) => {
+      logger.error('[useOrdersStore.removeOrderPhoto] Не удалось удалить фото.', error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Фото не удалено');
+      // Откат оптимистичного удаления: возвращаем фото в заявку (см. restorePhoto).
+      set((state) => ({ orders: restorePhoto(state.orders, orderId, photo) }));
     });
   },
 

@@ -351,6 +351,28 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
+  // Удаляет фото заявки: строку БД и физический файл на диске. SELECT + DELETE — в одной
+  // withExclusiveTransactionAsync (изоляция от конкурентных запросов того же соединения, см.
+  // комментарий getOrders); удаление файла — ПОСЛЕ коммита: при сбое DELETE файл остаётся на месте.
+  // mock://-URI сид-фото `deleteFileQuietly` пропускает молча.
+  async deleteOrderPhoto(photoId: string): Promise<void> {
+    const database = await getDatabase();
+    let storedUri: string | null = null;
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      const row = await txn.getFirstAsync<{ uri: string }>(
+        'SELECT uri FROM service_order_photos WHERE id = ?',
+        photoId,
+      );
+      storedUri = row?.uri ?? null;
+      await txn.runAsync('DELETE FROM service_order_photos WHERE id = ?', photoId);
+    });
+
+    if (storedUri !== null) {
+      deleteFileQuietly(toRuntimeUri(storedUri));
+    }
+  },
+
   // Полностью очищает обе таблицы и физические файлы фото на диске. SELECT + оба DELETE — в одной
   // withExclusiveTransactionAsync (атомарность и изоляция от конкурентных запросов того же
   // соединения, см. комментарий getOrders); удаление файлов — ПОСЛЕ коммита транзакции: при сбое
