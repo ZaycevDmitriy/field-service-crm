@@ -110,7 +110,8 @@ jobs:
           git merge --no-edit origin/main
 
           # Retry на случай гонки с параллельным push в develop (L16, аудит 2026-07-02): при отказе
-          # push пересобираем merge на актуальном develop (fetch + merge заново) и пробуем снова.
+          # push ждём и пересобираем merge на актуальном develop (fetch + merge заново); пауза —
+          # чтобы не сжечь все попытки за секунду, пока конкурирующий push ещё не завершился.
           attempt=1
           max_attempts=3
           until git push origin develop; do
@@ -120,6 +121,7 @@ jobs:
             fi
             attempt=$((attempt + 1))
             echo "push отклонён (попытка ${attempt}/${max_attempts}), повторяю fetch+merge..."
+            sleep 5
             git fetch origin develop main
             git reset --hard origin/develop
             git merge --no-edit origin/main
