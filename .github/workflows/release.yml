@@ -31,7 +31,9 @@ jobs:
     name: Release (semantic-release + OTA/APK)
     needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, не 30: APK-ветвь (prebuild + assembleRelease на холодном Gradle-кэше) занимает 25–30+ минут —
+    # релиз v1.2.3 был убит таймаутом 30 посреди assembleRelease (прошлые APK-релизы проходили впритык).
+    timeout-minutes: 60
     # contents: тег/Release/пуш CHANGELOG; issues/pull-requests: @semantic-release/github по умолчанию
     # комментирует issues/PR, закрытые релизом (successComment не отключён в .releaserc.json).
     permissions:
