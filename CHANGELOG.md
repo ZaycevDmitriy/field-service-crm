@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.3](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.2...v1.2.3) (2026-07-05)
+
+### Bug Fixes
+
+* **order-reminder:** диалог пресета напоминания закрывается на Android ([d33a309](https://github.com/ZaycevDmitriy/field-service-crm/commit/d33a3097da9766a71678f7b67021abfa62aa0ba4))
+* **orders:** сделать миграцию схемы v1→v2 атомарной и возобновляемой ([35dd0e1](https://github.com/ZaycevDmitriy/field-service-crm/commit/35dd0e1580e615d4ee93ea9ed5183775c36765a8))
+* **photo:** защитить сохранение фото от двойного тапа ([30be29b](https://github.com/ZaycevDmitriy/field-service-crm/commit/30be29ba8d77c0d673e9696d95837f7748bdc726))
+* **release:** проверять условия доставки до необратимых шагов и APK-ассет перед OTA ([fed1277](https://github.com/ZaycevDmitriy/field-service-crm/commit/fed12777931c8a3d39ba9d156ce3df2b500149ed))
+* устранить дефекты высокого приоритета аудита 2026-07-02 (H1–H4) ([#40](https://github.com/ZaycevDmitriy/field-service-crm/issues/40)) ([c43ba60](https://github.com/ZaycevDmitriy/field-service-crm/commit/c43ba607bae59b1c0ab32f541c407b812d85d057))
+* устранить дефекты низкого приоритета аудита 2026-07-02 (L3, L6, L8, L11, L12, L15–L17) ([#42](https://github.com/ZaycevDmitriy/field-service-crm/issues/42)) ([399a388](https://github.com/ZaycevDmitriy/field-service-crm/commit/399a38868cc55268d845f9a7053c90112bb1c6fb))
+* устранить дефекты среднего приоритета аудита 2026-07-02 (M1–M14) ([#41](https://github.com/ZaycevDmitriy/field-service-crm/issues/41)) ([7f5f474](https://github.com/ZaycevDmitriy/field-service-crm/commit/7f5f47482bb91b32dcbd9d7410442ad535062d9c))
+* устранить остаток аудита 2026-07-02 (L7 + L18) ([#43](https://github.com/ZaycevDmitriy/field-service-crm/issues/43)) ([28bd2bb](https://github.com/ZaycevDmitriy/field-service-crm/commit/28bd2bba3e411f8047818b464bb088217ed01a20))
+
 ## [1.2.2](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.1...v1.2.2) (2026-07-03)
 
 ### Bug Fixes
