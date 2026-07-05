@@ -16,3 +16,7 @@ export const OrderStatusLabel: Record<ServiceOrderStatusEnum, string> = {
   Done: 'Готово',
   Cancelled: 'Отменено',
 };
+
+// Type guard для значения статуса, прочитанного из внешнего источника (строка колонки БД).
+export const isServiceOrderStatus = (value: string): value is ServiceOrderStatusEnum =>
+  (Object.values(ServiceOrderStatusEnum) as string[]).includes(value);

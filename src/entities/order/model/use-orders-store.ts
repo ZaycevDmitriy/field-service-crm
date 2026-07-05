@@ -9,6 +9,7 @@ import type { IServiceOrder, IServiceOrderPhoto } from './types';
 
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
+import { cancelOrderRemindersByKey } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
@@ -37,6 +38,14 @@ export interface IOrdersStore {
   clearDatabase: () => Promise<void>;
 }
 
+// Иммутабельно убирает фото с заданным id из заявки (откат оптимистичного addOrderPhoto).
+const removePhoto = (orders: IServiceOrder[], orderId: string, photoId: string): IServiceOrder[] =>
+  orders.map((order) =>
+    order.id === orderId
+      ? { ...order, photos: order.photos.filter((photo) => photo.id !== photoId) }
+      : order,
+  );
+
 // Иммутабельно меняет статус заявки с заданным id при совпадении исходного статуса (guard).
 const transitionStatus = (
   orders: IServiceOrder[],
@@ -48,13 +57,38 @@ const transitionStatus = (
     order.id === orderId && order.status === from ? { ...order, status: to } : order,
   );
 
-// Fire-and-forget персист статуса: не блокирует оптимистичный UI, ошибку только логирует.
-const persistStatus = (orderId: string, status: ServiceOrderStatusEnum, action: string): void => {
+// Fire-and-forget персист статуса: не блокирует оптимистичный UI. При отклонении — откат
+// оптимистичного перехода (`to` → `from`) через тот же guard-переход. Откат сработает, только если
+// статус всё ещё `to`: если пользователь успел сделать следующий переход до этого отклонения, откат
+// не применяется — осознанный компромисс (не затираем более новое состояние).
+const persistStatus = (
+  set: (updater: (state: IOrdersStore) => Partial<IOrdersStore>) => void,
+  orderId: string,
+  from: ServiceOrderStatusEnum,
+  to: ServiceOrderStatusEnum,
+  action: string,
+  onPersisted?: () => void,
+): void => {
+  // Dev-only стресс-тест виртуализации: стор наполнен синтетикой мимо БД (см. initialize) — персист
+  // пропускается (БД в этом режиме не создана), но onPersisted вызывается: отмена напоминания не
+  // зависит от БД, и запланированное на синтетическую заявку уведомление надо снять.
+  if (STRESS_TEST) {
+    logger.debug(`[useOrdersStore.${action}] STRESS_TEST: персист статуса пропущен.`);
+    onPersisted?.();
+
+    return;
+  }
   // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
-  orderDatabaseService.updateOrderStatus(orderId, status).catch((error) => {
-    logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
-    useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
-  });
+  orderDatabaseService
+    .updateOrderStatus(orderId, to)
+    // Побочные эффекты закрытия заявки (отмена напоминания) — только после успешного персиста:
+    // при откате статуса заявка снова активна, и напоминание должно остаться.
+    .then(() => onPersisted?.())
+    .catch((error) => {
+      logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
+      set((state) => ({ orders: transitionStatus(state.orders, orderId, to, from) }));
+    });
 };
 
 export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
@@ -92,6 +126,13 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   },
 
   loadOrders: async () => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — pull-to-refresh не должен
+    // за ней ходить (иначе «no such table» → error-состояние списка).
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.loadOrders] STRESS_TEST: загрузка из БД пропущена.');
+
+      return;
+    }
     // Guard от повторного входа: дубль вызова во время загрузки (в т.ч. StrictMode в dev) — no-op.
     // Первый set({ loading: true }) проходит синхронно до await, поэтому второй вызов отсекается здесь.
     if (get().loading) {
@@ -125,7 +166,13 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
         ServiceOrderStatusEnum.InProgress,
       ),
     });
-    persistStatus(orderId, ServiceOrderStatusEnum.InProgress, 'startWork');
+    persistStatus(
+      set,
+      orderId,
+      ServiceOrderStatusEnum.New,
+      ServiceOrderStatusEnum.InProgress,
+      'startWork',
+    );
   },
 
   completeWork: (orderId) => {
@@ -141,24 +188,47 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
         ServiceOrderStatusEnum.Done,
       ),
     });
-    persistStatus(orderId, ServiceOrderStatusEnum.Done, 'completeWork');
+    persistStatus(
+      set,
+      orderId,
+      ServiceOrderStatusEnum.InProgress,
+      ServiceOrderStatusEnum.Done,
+      'completeWork',
+      // Заявка закрыта — напоминание больше не нужно (cancelOrderRemindersByKey не бросает).
+      () => void cancelOrderRemindersByKey(orderId),
+    );
   },
 
   // Отмена допустима только для активной заявки (New/InProgress); Done/Cancelled — no-op.
   cancelOrder: (orderId) => {
     const order = get().orders.find((item) => item.id === orderId);
+    if (!order) {
+      return;
+    }
     const isActive =
-      order?.status === ServiceOrderStatusEnum.New ||
-      order?.status === ServiceOrderStatusEnum.InProgress;
+      order.status === ServiceOrderStatusEnum.New ||
+      order.status === ServiceOrderStatusEnum.InProgress;
     if (!isActive) {
       return;
     }
+    const previousStatus = order.status;
     set({
-      orders: get().orders.map((item) =>
-        item.id === orderId ? { ...item, status: ServiceOrderStatusEnum.Cancelled } : item,
+      orders: transitionStatus(
+        get().orders,
+        orderId,
+        previousStatus,
+        ServiceOrderStatusEnum.Cancelled,
       ),
     });
-    persistStatus(orderId, ServiceOrderStatusEnum.Cancelled, 'cancelOrder');
+    persistStatus(
+      set,
+      orderId,
+      previousStatus,
+      ServiceOrderStatusEnum.Cancelled,
+      'cancelOrder',
+      // Заявка отменена — напоминание больше не нужно (cancelOrderRemindersByKey не бросает).
+      () => void cancelOrderRemindersByKey(orderId),
+    );
   },
 
   addOrderPhoto: (orderId, { uri, comment }) => {
@@ -179,14 +249,31 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
         item.id === orderId ? { ...item, photos: [...item.photos, photo] } : item,
       ),
     });
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — персист фото пропускается.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.addOrderPhoto] STRESS_TEST: персист фото пропущен.');
+
+      return;
+    }
     // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
     orderDatabaseService.addOrderPhoto(orderId, photo).catch((error) => {
       logger.error('[useOrdersStore.addOrderPhoto] Не удалось персистить фото.', error);
       useToastStore.getState().showToast(ToastVariantEnum.Error, 'Фото не сохранено');
+      // Откат оптимистичного добавления: убираем именно это фото по id (другие фото заявки,
+      // добавленные за это время, не затрагиваются).
+      set((state) => ({ orders: removePhoto(state.orders, orderId, photo.id) }));
     });
   },
 
   clearDatabase: async () => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — очищать нечего, но
+    // молчаливый no-op маскировал бы нажатие кнопки в Settings, поэтому явный Info-тост.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.clearDatabase] STRESS_TEST: очистка БД пропущена.');
+      useToastStore.getState().showToast(ToastVariantEnum.Info, 'Недоступно в режиме стресс-теста');
+
+      return;
+    }
     // Тот же guard/loading-паттерн, что в initialize/loadOrders: не даёт clearDatabase запуститься
     // параллельно с гидрацией стора (и наоборот) — иначе порядок резолва промисов не гарантирован.
     // Отказ теперь виден пользователю тостом (раньше был молчаливым no-op).
@@ -206,6 +293,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     } catch (error) {
       logger.error('[useOrdersStore.clearDatabase] Не удалось очистить БД.', error);
       set({ error: 'Не удалось очистить базу данных' });
+      // store.error рендерится только в OrdersListEmpty (список пуст) — при сбое очистки список
+      // остаётся непустым, поэтому ошибка дополнительно сообщается тостом.
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось очистить базу данных');
     } finally {
       set({ loading: false });
     }

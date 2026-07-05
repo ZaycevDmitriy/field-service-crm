@@ -40,7 +40,7 @@ export const OrdersPage: FC = () => {
   // Стабильный по ссылке колбэк на весь список — id приходит из элемента.
   const handleOpenOrder = useCallback(
     (orderId: string) => {
-      router.push({ pathname: '/orders/[orderId]', params: { orderId } });
+      router.navigate({ pathname: '/orders/[orderId]', params: { orderId } });
     },
     [router],
   );
@@ -62,6 +62,8 @@ export const OrdersPage: FC = () => {
         ListEmptyComponent={OrdersListEmpty}
         ItemSeparatorComponent={ItemSeparator}
         maintainVisibleContentPosition={maintainVisibleContentPosition}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={styles.listContent}
         style={styles.list}
       />

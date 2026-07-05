@@ -2,7 +2,7 @@ import { File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { MOCK_SERVICE_ORDERS } from '../model/mock';
-import { ServiceOrderStatusEnum } from '../model/order-status';
+import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
@@ -96,10 +96,22 @@ export const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   createdAt: row.created_at,
 });
 
+// Невалидный статус (повреждённая строка, ручное редактирование БД) не должен ронять рендер списка —
+// заявка остаётся видимой и рабочей с фоллбэком на New.
+const resolveOrderStatus = (rawStatus: string): ServiceOrderStatusEnum => {
+  if (isServiceOrderStatus(rawStatus)) {
+    return rawStatus;
+  }
+  logger.warn('[orderDatabaseService.rowToOrder] Невалидный статус заявки, фоллбэк на New.', {
+    status: rawStatus,
+  });
+
+  return ServiceOrderStatusEnum.New;
+};
+
 export const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]): IServiceOrder => ({
   id: row.id,
-  // В колонке хранятся значения ServiceOrderStatusEnum (запись контролируется сервисом).
-  status: row.status as ServiceOrderStatusEnum,
+  status: resolveOrderStatus(row.status),
   title: row.title,
   client: row.client,
   address: row.address,
@@ -185,8 +197,11 @@ const groupPhotosByOrderId = (rows: IServiceOrderPhotoRow[]): Map<string, IServi
 };
 
 // Миграция схемы заявок до v2 (Phase 6): добавляет координаты в существующие установки и убирает
-// производный distance_label. Идемпотентна и безопасна для свежих установок — операции применяются
-// только если фактическая схема таблицы этого требует (интроспекция через PRAGMA table_info).
+// производный distance_label. Идемпотентна, возобновляема и безопасна для свежих установок —
+// операции применяются только если фактическая схема таблицы этого требует (интроспекция через
+// PRAGMA table_info). Вызывается ИСКЛЮЧИТЕЛЬНО с транзакционным соединением (`txn` из
+// withExclusiveTransactionAsync, см. initDatabase) — kill посреди миграции откатывает ВСЕ операции
+// (ALTER + backfill + PRAGMA user_version) целиком, а не оставляет схему в промежуточном состоянии.
 // export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
 export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
   const columns = await database.getAllAsync<{ name: string }>(
@@ -194,36 +209,52 @@ export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<voi
   );
   const columnNames = new Set(columns.map((column) => column.name));
 
-  // v1 → v2: координаты. ADD COLUMN — nullable (SQLite запрещает ADD COLUMN NOT NULL к непустой
-  // таблице без DEFAULT); NOT NULL остаётся только в CREATE для свежих установок.
+  // v1 → v2: координаты. Каждая колонка проверяется и добавляется независимо — прерванный прошлый
+  // прогон мог успеть добавить latitude, но не longitude (или наоборот). ADD COLUMN — nullable
+  // (SQLite запрещает ADD COLUMN NOT NULL к непустой таблице без DEFAULT); NOT NULL остаётся только
+  // в CREATE для свежих установок.
   if (!columnNames.has('latitude')) {
-    await database.execAsync(
-      'ALTER TABLE service_orders ADD COLUMN latitude REAL;' +
-        ' ALTER TABLE service_orders ADD COLUMN longitude REAL;',
+    logger.debug('[orderDatabaseService.migrateOrdersSchema] Добавляю колонку latitude.');
+    await database.execAsync('ALTER TABLE service_orders ADD COLUMN latitude REAL;');
+  }
+
+  if (!columnNames.has('longitude')) {
+    logger.debug('[orderDatabaseService.migrateOrdersSchema] Добавляю колонку longitude.');
+    await database.execAsync('ALTER TABLE service_orders ADD COLUMN longitude REAL;');
+  }
+
+  // Backfill по id из сид-данных выполняется безусловно (не только когда ALTER только что отработал):
+  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет). Условие
+  // latitude IS NULL в самом запросе делает его no-op для уже заполненных строк и безопасным для
+  // повторного прогона после прерванной миграции.
+  for (const order of MOCK_SERVICE_ORDERS) {
+    const result = await database.runAsync(
+      'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
+      order.latitude,
+      order.longitude,
+      order.id,
     );
-    // Backfill по id из сид-данных: единственные заявки в legacy-БД — сид order-1..6 (формы создания
-    // заявок ещё нет). Условие latitude IS NULL делает повторный прогон безопасным.
-    for (const order of MOCK_SERVICE_ORDERS) {
-      await database.runAsync(
-        'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
-        order.latitude,
-        order.longitude,
-        order.id,
-      );
-    }
+    logger.debug(
+      `[orderDatabaseService.migrateOrdersSchema] Backfill ${order.id}: изменено строк ${result.changes}.`,
+    );
   }
 
   // Убираем производную колонку (PDR §13: производное не храним). DROP COLUMN — SQLite 3.35+ (Expo);
   // FK фото ссылается на id, поэтому снимки не затрагиваются.
   if (columnNames.has('distance_label')) {
+    logger.debug('[orderDatabaseService.migrateOrdersSchema] Удаляю колонку distance_label.');
     await database.execAsync('ALTER TABLE service_orders DROP COLUMN distance_label;');
   }
 };
 
 export const orderDatabaseService = {
   // Создаёт схему, включает foreign keys и применяет миграции по PRAGMA user_version.
-  // DDL/PRAGMA — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для свежих установок
-  // создаёт таблицы уже с координатами, для существующих — no-op (доводит migrateOrdersSchema).
+  // DDL/PRAGMA создания схемы — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для
+  // свежих установок создаёт таблицы уже с координатами, для существующих — no-op (доводит
+  // migrateOrdersSchema). Сама миграция выполняется в withExclusiveTransactionAsync на отдельном
+  // соединении: ALTER-ы, backfill и PRAGMA user_version атомарны — kill в любой момент либо
+  // откатывает всё, либо (после коммита) оставляет схему полностью на v2, промежуточных состояний
+  // между прогонами initDatabase быть не может.
   async initDatabase(): Promise<void> {
     // Ошибку не ловим: пробрасываем вызывающему (useOrdersStore), который ставит store.error и
     // логирует один раз — без двойного лога на двух слоях.
@@ -236,9 +267,16 @@ export const orderDatabaseService = {
     const currentVersion = versionRow?.user_version ?? 0;
 
     if (currentVersion < DATABASE_VERSION) {
-      await migrateOrdersSchema(database);
-      // user_version нельзя параметризовать; DATABASE_VERSION — модульная числовая константа.
-      await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
+      logger.info(
+        `[orderDatabaseService.initDatabase] Запускаю миграцию схемы ${currentVersion} → ${DATABASE_VERSION}.`,
+      );
+      await database.withExclusiveTransactionAsync(async (txn) => {
+        await migrateOrdersSchema(txn);
+        // user_version нельзя параметризовать; DATABASE_VERSION — модульная числовая константа.
+        // Запрос — через txn, не database: в транзакцию withExclusiveTransactionAsync попадают
+        // только запросы, выполненные через её колбэк-параметр.
+        await txn.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
+      });
       logger.info(
         `[orderDatabaseService.initDatabase] Схема мигрирована ${currentVersion} → ${DATABASE_VERSION}.`,
       );
@@ -260,13 +298,15 @@ export const orderDatabaseService = {
       return;
     }
 
-    // Вся партия сида — в одной транзакции (атомарность: либо все строки, либо ни одной).
-    await database.withTransactionAsync(async () => {
+    // Вся партия сида — в withExclusiveTransactionAsync: только эксклюзивная транзакция
+    // гарантирует атомарность (обычная withTransactionAsync не изолирует конкурентные запросы
+    // того же соединения, см. комментарий getOrders).
+    await database.withExclusiveTransactionAsync(async (txn) => {
       for (const order of MOCK_SERVICE_ORDERS) {
-        await insertOrder(database, order);
+        await insertOrder(txn, order);
 
         for (const photo of order.photos) {
-          await insertPhoto(database, order.id, photo);
+          await insertPhoto(txn, order.id, photo);
         }
       }
     });
@@ -298,32 +338,6 @@ export const orderDatabaseService = {
     return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
   },
 
-  // Возвращает заявку по id с её фото или null. Caller в Phase 4 нет (детали читаются из памяти
-  // стора) — метод контракта §14 на будущие фазы.
-  async getOrderById(orderId: string): Promise<IServiceOrder | null> {
-    try {
-      const database = await getDatabase();
-      const orderRow = await database.getFirstAsync<IServiceOrderRow>(
-        'SELECT * FROM service_orders WHERE id = ?',
-        orderId,
-      );
-
-      if (!orderRow) {
-        return null;
-      }
-
-      const photoRows = await database.getAllAsync<IServiceOrderPhotoRow>(
-        'SELECT * FROM service_order_photos WHERE order_id = ?',
-        orderId,
-      );
-
-      return rowToOrder(orderRow, photoRows.map(rowToPhoto));
-    } catch (error) {
-      logger.error('[orderDatabaseService.getOrderById] Не удалось получить заявку.', error);
-      throw error;
-    }
-  },
-
   // Персистит смену статуса заявки. Параметризованный UPDATE (без интерполяции).
   async updateOrderStatus(orderId: string, status: ServiceOrderStatusEnum): Promise<void> {
     const database = await getDatabase();
@@ -337,16 +351,21 @@ export const orderDatabaseService = {
     await insertPhoto(database, orderId, photo);
   },
 
-  // Полностью очищает обе таблицы и физические файлы фото на диске. URI читаются в память заранее,
-  // поэтому строки удаляются ДО файлов — при сбое DELETE файлы остаются на месте и записи в БД не
-  // бьются; mock://-URI сид-фото `deleteFileQuietly` пропускает молча. `File.exists`/`delete`
-  // синхронные — параллелизм (Promise.all) не нужен, поэтому цикл for..of.
+  // Полностью очищает обе таблицы и физические файлы фото на диске. SELECT + оба DELETE — в одной
+  // withExclusiveTransactionAsync (атомарность и изоляция от конкурентных запросов того же
+  // соединения, см. комментарий getOrders); удаление файлов — ПОСЛЕ коммита транзакции: при сбое
+  // DELETE файлы остаются на месте и записи в БД не бьются; mock://-URI сид-фото
+  // `deleteFileQuietly` пропускает молча. `File.exists`/`delete` синхронные — параллелизм
+  // (Promise.all) не нужен, поэтому цикл for..of.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
-    const photoRows = await database.getAllAsync<{ uri: string }>(
-      'SELECT uri FROM service_order_photos',
-    );
-    await database.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    let photoRows: { uri: string }[] = [];
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      photoRows = await txn.getAllAsync<{ uri: string }>('SELECT uri FROM service_order_photos');
+      await txn.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+    });
+
     for (const { uri } of photoRows) {
       deleteFileQuietly(toRuntimeUri(uri));
     }

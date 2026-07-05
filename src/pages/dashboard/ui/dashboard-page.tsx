@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { type FC, useMemo } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { type FC, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { DashboardHeader } from './dashboard-header';
@@ -10,8 +10,9 @@ import { StatsStrip } from './stats-strip';
 import { getNearestOrder, useOrdersStore } from '@/entities/order';
 import { openMapsRoute } from '@/features/open-route';
 import { Spacing } from '@/shared/config';
+import { formatTimeUntil } from '@/shared/lib/date';
 import { useCurrentLocation } from '@/shared/lib/location';
-import { useAppStore } from '@/shared/model';
+import { ToastVariantEnum, useAppStore, useToastStore } from '@/shared/model';
 import { Screen, Text } from '@/shared/ui';
 
 // Экран «Главная»: шапка, статистика дня, hero ближайшей заявки и быстрые действия.
@@ -28,18 +29,36 @@ export const DashboardPage: FC = () => {
     () => getNearestOrder(orders, currentLocation),
     [orders, currentLocation],
   );
+  // Точка отсчёта интервала (epoch ms, правило «Даты и время»): обновляется на каждом фокусе
+  // экрана — иначе label устаревает, пока дашборд открыт/в фоне таба.
+  const [now, setNow] = useState(() => Date.now());
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+    }, []),
+  );
+  // new Date() — не в render-пути списков (правило «Даты и время»), допустимо в useMemo одного hero-блока.
+  const timeUntilLabel = useMemo(
+    () => (nearestOrder ? formatTimeUntil(nearestOrder.scheduledTime, new Date(now)) : null),
+    [nearestOrder, now],
+  );
 
   const handleOpenNearest = () => {
     if (!nearestOrder) {
       return;
     }
-    router.push({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
+    router.navigate({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
   };
   // Маршрут до ближайшей заявки во внешних Яндекс.Картах (работает и без разрешения геолокации).
   const handleOpenRoute = () => {
     if (nearestOrder) {
       void openMapsRoute(nearestOrder);
     }
+  };
+  // Быстрые действия пока нефункциональны (создание заявки — Phase 3, скан — Phase 5) — честный
+  // фидбек тостом вместо молчаливого нажатия (L11).
+  const handleQuickActionComingSoon = () => {
+    useToastStore.getState().showToast(ToastVariantEnum.Info, 'Будет доступно в следующей версии');
   };
 
   return (
@@ -50,7 +69,7 @@ export const DashboardPage: FC = () => {
         {nearestOrder ? (
           <View style={styles.section}>
             <Text size="13" color="textSecondary" style={styles.eyebrow}>
-              Следующая заявка · через 1ч 30м
+              {timeUntilLabel ? `Следующая заявка · ${timeUntilLabel}` : 'Следующая заявка'}
             </Text>
             <NearestOrderCard
               order={nearestOrder}
@@ -64,11 +83,17 @@ export const DashboardPage: FC = () => {
             Быстрые действия
           </Text>
           <View style={styles.quickGrid}>
-            <QuickActionButton icon="plus" title="Новая заявка" subtitle="Создать вручную" />
+            <QuickActionButton
+              icon="plus"
+              title="Новая заявка"
+              subtitle="Создать вручную"
+              onPress={handleQuickActionComingSoon}
+            />
             <QuickActionButton
               icon="qrcode.viewfinder"
               title="Сканировать"
               subtitle="QR-код заявки"
+              onPress={handleQuickActionComingSoon}
             />
           </View>
         </View>

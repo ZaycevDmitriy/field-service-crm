@@ -109,6 +109,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         color: '#2563EB',
       },
     ],
+    './plugins/with-release-signing.js',
   ],
   experiments: {
     typedRoutes: true,

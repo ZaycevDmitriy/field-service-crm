@@ -1,4 +1,4 @@
-import { getNearestOrder } from '../getNearestOrder';
+import { getNearestOrder } from '../get-nearest-order';
 import { ServiceOrderStatusEnum } from '../order-status';
 import type { IServiceOrder } from '../types';
 

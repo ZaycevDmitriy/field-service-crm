@@ -1,9 +1,9 @@
 export type { IServiceOrder, IServiceOrderPhoto } from './types';
-export { ServiceOrderStatusEnum, OrderStatusLabel } from './order-status';
+export { ServiceOrderStatusEnum, OrderStatusLabel, isServiceOrderStatus } from './order-status';
 export { OrderFilterEnum, OrderFilterLabel } from './order-filter';
-export { useOrdersStore, type IOrdersStore } from './useOrdersStore';
-export { getNearestOrder } from './getNearestOrder';
-export { useOrderDistanceLabel } from './useOrderDistanceLabel';
+export { useOrdersStore, type IOrdersStore } from './use-orders-store';
+export { getNearestOrder } from './get-nearest-order';
+export { useOrderDistanceLabel } from './use-order-distance-label';
 export {
   lightOrderStatusColors,
   darkOrderStatusColors,

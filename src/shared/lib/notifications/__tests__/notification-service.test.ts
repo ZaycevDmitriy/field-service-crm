@@ -7,7 +7,7 @@ import {
   mapPermissionStatus,
   PermissionResultEnum,
   scheduleOrderReminder,
-} from '../notificationService';
+} from '../notification-service';
 
 // notificationService на уровне модуля вызывает setNotificationHandler — мокаем expo-notifications,
 // чтобы импорт не дёргал нативный модуль. Заодно отдаём enum PermissionStatus для типобезопасных входов.

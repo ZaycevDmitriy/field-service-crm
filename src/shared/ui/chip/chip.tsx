@@ -20,6 +20,8 @@ export const Chip: FC<IChipProps> = ({ label, selected = false, count, onPress }
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
       style={[
         styles.chip,
         {
