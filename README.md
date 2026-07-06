@@ -68,7 +68,8 @@ intentionally dark in both themes:
 - **Order details** — status flow (New → In Progress → Done / Cancelled), client, address, time
   slot and description.
 - **Photo report** — attach photos to an order from the camera or the gallery, behind a permission
-  gate.
+  gate; view a photo full-screen and delete it (deletion is only allowed while the order is In
+  Progress).
 - **Location & route** — straight-line distance to each order; "Open route" hands off to the system
   maps app.
 - **Reminders** — a local notification for the visit time.
