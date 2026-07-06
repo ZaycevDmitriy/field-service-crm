@@ -5,9 +5,20 @@
 
 **English** · [Русский](README.ru.md)
 
-Onsite is a mobile mini-CRM for on-site field-service technicians (router installs, line
-diagnostics, cable repair). It is a portfolio project built with Expo and React Native, focused on
-offline-first behavior, native device APIs, and a clean feature-based architecture.
+> **For recruiters (TL;DR)**
+> - **What:** an offline-first mobile CRM for field-service technicians — service orders, status
+>   flow, photo reports, routes, visit reminders.
+> - **Stack:** TypeScript (`strict`), React Native + Expo SDK 56, Expo Router, Zustand, SQLite,
+>   EAS Build / EAS Update (OTA), GitHub Actions + semantic-release.
+> - **Where to look:** [Architecture](#architecture) (Feature-Sliced Design),
+>   [Releases](#releases) (automated CI/CD with fingerprint-routed APK / OTA delivery),
+>   [Screenshots](#screenshots).
+> - **Try it:** [download the Android APK](#download-android-apk) — no build required.
+
+**Onsite** (repository name: `field-service-crm`, after the domain) is a mobile mini-CRM for
+on-site field-service technicians (router installs, line diagnostics, cable repair). It is a
+portfolio project built with Expo and React Native, focused on offline-first behavior, native
+device APIs, and a clean feature-based architecture.
 
 ## Overview
 
@@ -16,6 +27,19 @@ A technician opens the app to their nearest active job, works through a list of 
 Done / Cancelled), attaches a photo report, builds a route in external maps, and sets visit
 reminders. All data is stored locally in SQLite, so the app works without a network connection. App
 delivery is split into two channels: **native** (EAS Build) and **JS/asset** (EAS Update OTA).
+
+## Why this project matters
+
+Onsite simulates a real class of production software — field-service / workforce-management apps
+used by couriers, telecom engineers, installers, and maintenance crews (think of the in-house tools
+of ISPs, utilities, and delivery companies). The constraints are the real ones:
+
+- technicians work in basements and industrial areas with no connectivity, so **offline is the
+  default**, not an edge case;
+- the device **camera, GPS, and notifications are part of the workflow**, not add-ons;
+- the app must be **updatable in the field** (OTA) without waiting for a full reinstall.
+
+The project is a portfolio piece, but the problems it solves are taken from production practice.
 
 ## What this project demonstrates
 
@@ -35,7 +59,24 @@ delivery is split into two channels: **native** (EAS Build) and **JS/asset** (EA
 
 ## Demo
 
-There is no hosted demo — run the app locally on a development build (see
+<!-- TODO: демо-GIF основного флоу (список заявок → детали → смена статуса → фото → маршрут);
+     файл — screenshots/demo.gif, ширина ~300. -->
+
+### Download Android APK
+
+The release pipeline attaches an APK to a [GitHub Release](../../releases) whenever the native
+layer changes; JS-only releases ship as OTA updates on top of the last APK.
+
+**[⬇ Download the Android APK](https://github.com/ZaycevDmitriy/field-service-crm/releases/download/v1.2.3/onsite-v1.2.3.apk)**
+(or grab the `.apk` from the most recent [release](../../releases) that has one). On launch the app
+pulls the newest JS automatically via EAS Update — which is itself a live demo of the OTA flow.
+
+> The APK is signed with the project's own release keystore, so Android will ask to allow installs
+> from this source and may show an "unverified app" warning — expected for a non-store build.
+
+### Running locally
+
+There is no hosted demo besides the APK — run the app locally on a development build (see
 [Getting Started](#getting-started)). The screenshots below were captured on the iOS simulator.
 
 Live OTA demo: **Settings → Update** shows the channel / runtime version and the
