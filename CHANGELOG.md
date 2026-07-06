@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.3...v1.3.0) (2026-07-06)
+
+### Features
+
+* генератор mock-данных — 200 заявок New без фото ([e73fcb4](https://github.com/ZaycevDmitriy/field-service-crm/commit/e73fcb414bfdc2e34d83bd69b629d7b72c28b1d7))
+* просмотр и удаление фото фотоотчёта, гейт добавления по статусу ([9d88582](https://github.com/ZaycevDmitriy/field-service-crm/commit/9d88582b1d66a8864d44ba9d4a106f3cb1a80182))
+
+### Bug Fixes
+
+* обратная связь при отказе удаления фото и позиция при откате ([3367068](https://github.com/ZaycevDmitriy/field-service-crm/commit/3367068dbb4652b5393f08c5d89ddda27aa58c42))
+
 ## [1.2.3](https://github.com/ZaycevDmitriy/field-service-crm/compare/v1.2.2...v1.2.3) (2026-07-05)
 
 ### Bug Fixes
