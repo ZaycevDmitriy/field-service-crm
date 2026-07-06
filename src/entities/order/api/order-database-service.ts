@@ -224,9 +224,10 @@ export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<voi
   }
 
   // Backfill по id из сид-данных выполняется безусловно (не только когда ALTER только что отработал):
-  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет). Условие
-  // latitude IS NULL в самом запросе делает его no-op для уже заполненных строк и безопасным для
-  // повторного прогона после прерванной миграции.
+  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет), и первые 6
+  // локаций генератора mock.ts закреплены именно за этими id; UPDATE по остальным id сида — no-op
+  // (строк нет). Условие latitude IS NULL в самом запросе делает его no-op и для уже заполненных
+  // строк — повторный прогон после прерванной миграции безопасен.
   for (const order of MOCK_SERVICE_ORDERS) {
     const result = await database.runAsync(
       'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
