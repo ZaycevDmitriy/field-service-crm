@@ -299,4 +299,4 @@ Documented but intentionally not implemented in the MVP:
 
 ## License
 
-[MIT](LICENSE) © 2026 Dmitriy Zaycev
+[PolyForm Noncommercial 1.0.0](LICENSE) © 2026 Dmitriy Zaycev

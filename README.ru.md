@@ -295,4 +295,4 @@ UI реализован по дизайн-прототипу (экраны, от
 
 ## Лицензия
 
-[MIT](LICENSE) © 2026 Dmitriy Zaycev
+[PolyForm Noncommercial 1.0.0](LICENSE) © 2026 Dmitriy Zaycev
