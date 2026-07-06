@@ -312,13 +312,15 @@ describe('useOrdersStore', () => {
       ServiceOrderStatusEnum.New,
       ServiceOrderStatusEnum.Done,
       ServiceOrderStatusEnum.Cancelled,
-    ])('no-op, если статус заявки %s (не InProgress)', (status) => {
+    ])('отказ с Info-тостом, если статус заявки %s (не InProgress)', (status) => {
       resetStore([makeOrderWithPhoto(status)]);
 
       useOrdersStore.getState().removeOrderPhoto('order-1', 'photo-1');
 
       expect(useOrdersStore.getState().orders[0].photos).toHaveLength(1);
       expect(mockedService.deleteOrderPhoto).not.toHaveBeenCalled();
+      // Пользователь подтвердил удаление в Alert — отказ guard'а не должен быть молчаливым.
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Info }]);
     });
 
     it('no-op, если фото не найдено', () => {
@@ -340,6 +342,29 @@ describe('useOrdersStore', () => {
 
       expect(useOrdersStore.getState().orders[0].photos).toMatchObject([{ id: 'photo-1' }]);
       expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
+    });
+
+    it('откат возвращает фото на исходную позицию в списке', async () => {
+      const first = { ...PHOTO, id: 'photo-first' };
+      const last = { ...PHOTO, id: 'photo-last' };
+      resetStore([
+        makeOrder({ status: ServiceOrderStatusEnum.InProgress, photos: [first, PHOTO, last] }),
+      ]);
+      mockedService.deleteOrderPhoto.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().removeOrderPhoto('order-1', 'photo-1');
+      expect(useOrdersStore.getState().orders[0].photos).toMatchObject([
+        { id: first.id },
+        { id: last.id },
+      ]);
+
+      await Promise.resolve().then().then().then();
+
+      expect(useOrdersStore.getState().orders[0].photos).toMatchObject([
+        { id: first.id },
+        { id: PHOTO.id },
+        { id: last.id },
+      ]);
     });
   });
 

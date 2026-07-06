@@ -42,18 +42,24 @@ export interface IOrdersStore {
   clearDatabase: () => Promise<void>;
 }
 
-// Иммутабельно возвращает фото в заявку (в конец списка), если его там нет — откат оптимистичного
-// removeOrderPhoto. Проверка по id страхует от дубля, если фото успели вернуть/добавить заново.
+// Иммутабельно возвращает фото в заявку на исходную позицию — откат оптимистичного
+// removeOrderPhoto. Если список успел укоротиться, индекс прижимается к концу. Проверка по id
+// страхует от дубля, если фото успели вернуть/добавить заново.
 const restorePhoto = (
   orders: IServiceOrder[],
   orderId: string,
   photo: IServiceOrderPhoto,
+  index: number,
 ): IServiceOrder[] =>
-  orders.map((order) =>
-    order.id === orderId && !order.photos.some((existing) => existing.id === photo.id)
-      ? { ...order, photos: [...order.photos, photo] }
-      : order,
-  );
+  orders.map((order) => {
+    if (order.id !== orderId || order.photos.some((existing) => existing.id === photo.id)) {
+      return order;
+    }
+    const photos = [...order.photos];
+    photos.splice(Math.min(index, photos.length), 0, photo);
+
+    return { ...order, photos };
+  });
 
 // Иммутабельно убирает фото с заданным id из заявки (откат оптимистичного addOrderPhoto).
 const removePhoto = (orders: IServiceOrder[], orderId: string, photoId: string): IServiceOrder[] =>
@@ -286,14 +292,25 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
 
   removeOrderPhoto: (orderId, photoId) => {
     const order = get().orders.find((item) => item.id === orderId);
+    if (!order) {
+      return;
+    }
     // Guard доменного правила: фотоотчёт редактируется только у заявки в работе (см. addOrderPhoto).
-    if (!order || order.status !== ServiceOrderStatusEnum.InProgress) {
+    // Пользователь уже подтвердил удаление в Alert — молчаливый no-op выглядел бы как поломка,
+    // поэтому отказ сообщается Info-тостом (в отличие от addOrderPhoto, где подтверждения нет).
+    if (order.status !== ServiceOrderStatusEnum.InProgress) {
+      useToastStore
+        .getState()
+        .showToast(ToastVariantEnum.Info, 'Заявка не в работе — фото не удалено');
+
       return;
     }
-    const photo = order.photos.find((item) => item.id === photoId);
-    if (!photo) {
+    // Индекс запоминается до удаления: откат вернёт фото на исходную позицию в сетке.
+    const photoIndex = order.photos.findIndex((item) => item.id === photoId);
+    if (photoIndex === -1) {
       return;
     }
+    const photo = order.photos[photoIndex];
     set({ orders: removePhoto(get().orders, orderId, photoId) });
     // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — персист удаления пропускается.
     if (STRESS_TEST) {
@@ -305,8 +322,8 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     orderDatabaseService.deleteOrderPhoto(photoId).catch((error) => {
       logger.error('[useOrdersStore.removeOrderPhoto] Не удалось удалить фото.', error);
       useToastStore.getState().showToast(ToastVariantEnum.Error, 'Фото не удалено');
-      // Откат оптимистичного удаления: возвращаем фото в заявку (см. restorePhoto).
-      set((state) => ({ orders: restorePhoto(state.orders, orderId, photo) }));
+      // Откат оптимистичного удаления: возвращаем фото на исходную позицию (см. restorePhoto).
+      set((state) => ({ orders: restorePhoto(state.orders, orderId, photo, photoIndex) }));
     });
   },
 
