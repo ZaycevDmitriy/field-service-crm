@@ -224,9 +224,10 @@ export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<voi
   }
 
   // Backfill по id из сид-данных выполняется безусловно (не только когда ALTER только что отработал):
-  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет). Условие
-  // latitude IS NULL в самом запросе делает его no-op для уже заполненных строк и безопасным для
-  // повторного прогона после прерванной миграции.
+  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет), и первые 6
+  // локаций генератора mock.ts закреплены именно за этими id; UPDATE по остальным id сида — no-op
+  // (строк нет). Условие latitude IS NULL в самом запросе делает его no-op и для уже заполненных
+  // строк — повторный прогон после прерванной миграции безопасен.
   for (const order of MOCK_SERVICE_ORDERS) {
     const result = await database.runAsync(
       'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
@@ -349,6 +350,28 @@ export const orderDatabaseService = {
   async addOrderPhoto(orderId: string, photo: IServiceOrderPhoto): Promise<void> {
     const database = await getDatabase();
     await insertPhoto(database, orderId, photo);
+  },
+
+  // Удаляет фото заявки: строку БД и физический файл на диске. SELECT + DELETE — в одной
+  // withExclusiveTransactionAsync (изоляция от конкурентных запросов того же соединения, см.
+  // комментарий getOrders); удаление файла — ПОСЛЕ коммита: при сбое DELETE файл остаётся на месте.
+  // mock://-URI сид-фото `deleteFileQuietly` пропускает молча.
+  async deleteOrderPhoto(photoId: string): Promise<void> {
+    const database = await getDatabase();
+    let storedUri: string | null = null;
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      const row = await txn.getFirstAsync<{ uri: string }>(
+        'SELECT uri FROM service_order_photos WHERE id = ?',
+        photoId,
+      );
+      storedUri = row?.uri ?? null;
+      await txn.runAsync('DELETE FROM service_order_photos WHERE id = ?', photoId);
+    });
+
+    if (storedUri !== null) {
+      deleteFileQuietly(toRuntimeUri(storedUri));
+    }
   },
 
   // Полностью очищает обе таблицы и физические файлы фото на диске. SELECT + оба DELETE — в одной
