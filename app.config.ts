@@ -80,6 +80,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-web-browser',
     '@react-native-vector-icons/material-icons',
     'expo-sqlite',
+    'expo-secure-store',
     [
       'expo-camera',
       {
