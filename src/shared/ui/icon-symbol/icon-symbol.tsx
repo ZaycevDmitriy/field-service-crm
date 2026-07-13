@@ -48,6 +48,7 @@ const MAPPING = {
   'checkmark.circle.fill': 'check-circle',
   'info.circle.fill': 'info',
   'lock.fill': 'lock',
+  'rectangle.portrait.and.arrow.right': 'logout',
 } satisfies Partial<IconMapping>;
 
 interface IIconSymbolProps {

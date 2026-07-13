@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
+import { logout, UserRoleLabel, useSessionStore } from '@/entities/session';
 import { UpdateStatusBadge, UpdateStatusHint, useAppUpdates } from '@/features/app-updates';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { formatDateTime } from '@/shared/lib/date';
@@ -14,6 +15,7 @@ import { Button, DiagnosticCard, DiagnosticRow, IconSymbol, Screen, Text } from 
 export const SettingsPage: FC = () => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const user = useSessionStore((state) => state.user);
   const ordersCount = useOrdersStore((state) => state.orders.length);
   const clearDatabase = useOrdersStore((state) => state.clearDatabase);
   const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
@@ -26,6 +28,20 @@ export const SettingsPage: FC = () => {
         : 'Ещё не проверялось',
     [diagnostics.lastCheck],
   );
+
+  const handleLogout = () => {
+    Alert.alert('Выйти из аккаунта?', 'Вы сможете войти снова по email и паролю.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Выйти',
+        style: 'destructive',
+        onPress: () => {
+          // Гибрид с outbox (запрос синхронизации перед выходом) — Phase 13, когда появится очередь.
+          void logout();
+        },
+      },
+    ]);
+  };
 
   const handleClearDatabase = () => {
     Alert.alert(
@@ -62,21 +78,24 @@ export const SettingsPage: FC = () => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <DiagnosticCard title="Профиль">
-          <View style={styles.profile}>
-            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-              <Text weight="semibold" color="white">
-                ДМ
-              </Text>
-            </View>
-            <View style={styles.profileText}>
-              <Text size="15" weight="semibold">
-                Дмитрий Морозов
-              </Text>
-              <Text size="13" color="textSecondary">
-                Техник · Северный участок
-              </Text>
-            </View>
+        <DiagnosticCard title="Аккаунт" padded={false}>
+          <DiagnosticRow label="Имя" value={user?.displayName ?? '—'} />
+          <DiagnosticRow label="Email" value={user?.email ?? '—'} />
+          <DiagnosticRow label="Роль" value={user ? UserRoleLabel[user.role] : '—'} isLast />
+          <View style={styles.accountAction}>
+            <Button
+              title="Выйти"
+              variant="danger"
+              fullWidth
+              onPress={handleLogout}
+              leftIcon={
+                <IconSymbol
+                  name="rectangle.portrait.and.arrow.right"
+                  size={18}
+                  color={colors.white}
+                />
+              }
+            />
           </View>
         </DiagnosticCard>
 
@@ -162,21 +181,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: Spacing.md,
   },
-  profile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileText: {
-    flex: 1,
-    gap: Spacing['2'],
+  accountAction: {
+    padding: Spacing.md,
   },
   block: {
     gap: Spacing.sm,

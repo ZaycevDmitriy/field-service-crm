@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { decodeJwtPayload } from '../lib';
-import { useSessionStore } from '../model';
+import { UserRoleEnum, useSessionStore } from '../model';
 import type { IUser } from '../model';
 
 import { httpClient } from '@/shared/api';
@@ -27,6 +27,22 @@ interface IRefreshResponse {
   accessToken: string;
   refreshToken: string;
 }
+
+// Type guard для пользователя, прочитанного из SecureStore (внешний источник, PDR-правило
+// «валидация внешних данных на границе»): защищает от ручной правки/повреждения JSON на диске.
+const isUser = (value: unknown): value is IUser => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<IUser>;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.email === 'string' &&
+    typeof candidate.displayName === 'string' &&
+    (candidate.role === UserRoleEnum.Dispatcher || candidate.role === UserRoleEnum.Technician)
+  );
+};
 
 // In-memory кэш токенов — единственный источник для getAccessToken (нужен http-client'у синхронно,
 // SecureStore асинхронен). SecureStore остаётся источником истины между запусками приложения;
@@ -135,11 +151,24 @@ export const logout = async (): Promise<void> => {
 // Восстановление сессии при старте приложения: читает SecureStore, при уже истёкшем access
 // (по exp из JWT — не бьём лишний раз 401 сразу после cold start) — проактивно обновляет пару.
 export const restoreSession = async (): Promise<void> => {
-  const [accessToken, refreshToken, userJson] = await Promise.all([
-    SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
-    SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
-    SecureStore.getItemAsync(USER_KEY),
-  ]);
+  let accessToken: string | null;
+  let refreshToken: string | null;
+  let userJson: string | null;
+
+  try {
+    [accessToken, refreshToken, userJson] = await Promise.all([
+      SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
+      SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
+      SecureStore.getItemAsync(USER_KEY),
+    ]);
+  } catch (error) {
+    // Нативный сбой Keychain/Keystore не должен навечно оставить статус Unknown (сплэш держится,
+    // пока статус не покинет Unknown, см. src/app/_layout.tsx) — трактуем как отсутствие сессии.
+    logger.warn('[session-service.restoreSession] SecureStore недоступен, сброс сессии.', error);
+    useSessionStore.getState().clearSession();
+
+    return;
+  }
 
   if (!accessToken || !refreshToken || !userJson) {
     logger.info('[session-service.restoreSession] Сессия не найдена, экран входа.');
@@ -150,7 +179,11 @@ export const restoreSession = async (): Promise<void> => {
 
   let user: IUser;
   try {
-    user = JSON.parse(userJson) as IUser;
+    const parsed: unknown = JSON.parse(userJson);
+    if (!isUser(parsed)) {
+      throw new Error('Некорректная форма пользователя в SecureStore.');
+    }
+    user = parsed;
   } catch (error) {
     logger.warn(
       '[session-service.restoreSession] Повреждённые данные пользователя, сброс сессии.',

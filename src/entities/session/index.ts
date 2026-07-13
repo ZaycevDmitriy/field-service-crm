@@ -2,6 +2,7 @@
 export {
   SessionStatusEnum,
   UserRoleEnum,
+  UserRoleLabel,
   type IUser,
   useSessionStore,
   type ISessionStore,

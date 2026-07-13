@@ -155,7 +155,7 @@ const RootLayout: FC = () => {
   // Восстановление сессии из SecureStore — параллельно с bootstrap БД ниже (независимые операции).
   // Пока статус остаётся Unknown, RootNavigator держит сплэш видимым (см. ниже).
   useEffect(() => {
-    restoreSession();
+    void restoreSession();
   }, []);
 
   // Однократный bootstrap БД при старте (не-реактивный getState): инициализация SQLite, идемпотентный

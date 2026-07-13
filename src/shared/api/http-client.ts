@@ -18,6 +18,12 @@ const AUTH_ENDPOINT_PATHS = ['/v1/auth/login', '/v1/auth/refresh', '/v1/auth/log
 const isAuthEndpoint = (url: string | undefined): boolean =>
   AUTH_ENDPOINT_PATHS.some((path) => (url ?? '').includes(path));
 
+// Множество валидных кодов ошибки — для проверки на границе (тело ответа сервера — внешние данные).
+const API_ERROR_CODES = new Set<string>(Object.values(ApiErrorCodeEnum));
+
+const isApiErrorCode = (value: unknown): value is ApiErrorCodeEnum =>
+  typeof value === 'string' && API_ERROR_CODES.has(value);
+
 export const httpClient = create({
   baseURL: process.env.EXPO_PUBLIC_API_URL ?? DEV_API_URL_FALLBACK,
   timeout: REQUEST_TIMEOUT_MS,
@@ -28,9 +34,9 @@ export const httpClient = create({
 export const toApiError = (error: unknown): IApiErrorEnvelope => {
   if (isAxiosError(error)) {
     const data = error.response?.data as Partial<IApiErrorEnvelope> | undefined;
-    if (typeof data?.code === 'string' && typeof data.message === 'string') {
+    if (isApiErrorCode(data?.code) && typeof data.message === 'string') {
       return {
-        code: data.code as ApiErrorCodeEnum,
+        code: data.code,
         message: data.message,
         ...(data.details !== undefined ? { details: data.details } : {}),
       };

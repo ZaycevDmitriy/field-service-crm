@@ -6,6 +6,12 @@ export const UserRoleEnum = {
 } as const;
 export type UserRoleEnum = (typeof UserRoleEnum)[keyof typeof UserRoleEnum];
 
+// Человекочитаемые подписи ролей (секция «Аккаунт» в настройках).
+export const UserRoleLabel: Record<UserRoleEnum, string> = {
+  [UserRoleEnum.Dispatcher]: 'Диспетчер',
+  [UserRoleEnum.Technician]: 'Техник',
+};
+
 // Пользователь сессии — минимальный набор полей, нужный клиенту в Phase 10 (id, email, role,
 // displayName). Остальные поля ответа логина (isActive, createdAt) в домен пока не введены.
 export interface IUser {
