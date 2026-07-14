@@ -3,6 +3,7 @@ import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
 import { isPhotoSyncStatus, PhotoSyncStatusEnum } from '../model/photo-sync-status';
+import type { IPullOrderFields } from '../model/pull-item-to-order';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
@@ -382,6 +383,126 @@ export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<voi
   }
 };
 
+// Ключи kv-таблицы sync_state (PDR client-sync §5, T-07/T-05): курсор pull и id пользователя
+// последнего bootstrap (детекция смены пользователя — см. useOrdersStore.bootstrapSync). Единая
+// константа вместо повторения строковых литералов на разных слоях (api + model/store).
+export const SyncStateKeyEnum = {
+  Cursor: 'sync.cursor',
+  LastUserId: 'sync.lastUserId',
+} as const;
+export type SyncStateKeyEnum = (typeof SyncStateKeyEnum)[keyof typeof SyncStateKeyEnum];
+
+// Upsert одной строки sync_state. Общий хелпер: используется как самостоятельно (setSyncStateValue),
+// так и внутри транзакции applyPullPage (курсор персистится в той же транзакции, что и страница).
+const upsertSyncStateRow = (
+  database: SQLiteDatabase,
+  key: string,
+  value: string,
+): Promise<SQLiteRunResult> =>
+  database.runAsync(
+    'INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    key,
+    value,
+  );
+
+// UPSERT заявки с LWW-условием: DO UPDATE применяется, только если updated_seq страницы строго
+// больше локального (или локальный ещё NULL — заявка получена локально впервые). Условие делает
+// merge идемпотентным без предварительного SELECT — повторная поставка safety-lag хвоста (тот же
+// updated_seq) — no-op, не затирает локальные данные тем же или более старым снимком.
+const upsertOrder = (
+  database: SQLiteDatabase,
+  order: IPullOrderFields,
+): Promise<SQLiteRunResult> => {
+  const row: IServiceOrderRow = {
+    id: order.id,
+    status: order.status,
+    title: order.title,
+    client: order.client,
+    address: order.address,
+    description: order.description,
+    scheduled_time: order.scheduledTime,
+    scheduled_slot: order.scheduledSlot,
+    latitude: order.latitude,
+    longitude: order.longitude,
+    updated_seq: order.updatedSeq,
+    assigned_to: order.assignedTo ?? null,
+    scheduled_at: order.scheduledAt,
+    slot_start: order.slotStart,
+    slot_end: order.slotEnd,
+    created_at: order.createdAt,
+    updated_at: order.updatedAt,
+  };
+
+  return database.runAsync(
+    `INSERT INTO service_orders
+       (id, status, title, client, address, description, scheduled_time, scheduled_slot,
+        latitude, longitude, updated_seq, assigned_to, scheduled_at, slot_start, slot_end,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       title = excluded.title,
+       client = excluded.client,
+       address = excluded.address,
+       description = excluded.description,
+       scheduled_time = excluded.scheduled_time,
+       scheduled_slot = excluded.scheduled_slot,
+       latitude = excluded.latitude,
+       longitude = excluded.longitude,
+       updated_seq = excluded.updated_seq,
+       assigned_to = excluded.assigned_to,
+       scheduled_at = excluded.scheduled_at,
+       slot_start = excluded.slot_start,
+       slot_end = excluded.slot_end,
+       created_at = excluded.created_at,
+       updated_at = excluded.updated_at
+     WHERE excluded.updated_seq > service_orders.updated_seq OR service_orders.updated_seq IS NULL`,
+    row.id,
+    row.status,
+    row.title,
+    row.client,
+    row.address,
+    row.description,
+    row.scheduled_time,
+    row.scheduled_slot,
+    row.latitude,
+    row.longitude,
+    row.updated_seq,
+    row.assigned_to,
+    row.scheduled_at,
+    row.slot_start,
+    row.slot_end,
+    row.created_at,
+    row.updated_at,
+  );
+};
+
+// Удаляет заявку-tombstone: строки фото (FK на заявку — сначала они), возможные outbox-записи (push
+// мутаций — Phase 13, но защита от будущего дребезга уже здесь) и саму заявку. Возвращает уже
+// сконвертированные в runtime-URI пути фото — вызывающий (orderSyncService) удаляет файлы, не зная
+// о relative/absolute-конвенции хранения (деталь этого модуля, см. toRuntimeUri выше).
+const deleteTombstoneOrder = async (
+  database: SQLiteDatabase,
+  orderId: string,
+): Promise<string[]> => {
+  const photoRows = await database.getAllAsync<{ uri: string }>(
+    'SELECT uri FROM service_order_photos WHERE order_id = ?',
+    orderId,
+  );
+  await database.runAsync('DELETE FROM service_order_photos WHERE order_id = ?', orderId);
+  await database.runAsync('DELETE FROM sync_outbox WHERE order_id = ?', orderId);
+  await database.runAsync('DELETE FROM service_orders WHERE id = ?', orderId);
+
+  return photoRows.map((row) => toRuntimeUri(row.uri));
+};
+
+// Результат применения pull-страницы — вход для post-commit побочных эффектов orderSyncService
+// (удаление файлов фото, отмена напоминаний по tombstone-заявкам).
+export interface IApplyPullPageResult {
+  deletedPhotoUris: string[];
+  deletedOrderIds: string[];
+}
+
 export const orderDatabaseService = {
   // Создаёт схему, включает foreign keys и применяет миграции по PRAGMA user_version.
   // DDL/PRAGMA создания схемы — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для
@@ -477,24 +598,80 @@ export const orderDatabaseService = {
     }
   },
 
-  // Полностью очищает обе таблицы и физические файлы фото на диске. SELECT + оба DELETE — в одной
-  // withExclusiveTransactionAsync (атомарность и изоляция от конкурентных запросов того же
-  // соединения, см. комментарий getOrders); удаление файлов — ПОСЛЕ коммита транзакции: при сбое
-  // DELETE файлы остаются на месте и записи в БД не бьются; mock://-URI сид-фото
-  // `deleteFileQuietly` пропускает молча. `File.exists`/`delete` синхронные — параллелизм
-  // (Promise.all) не нужен, поэтому цикл for..of.
+  // Полностью очищает все таблицы (заявки, фото, outbox, sync_state) и физические файлы фото на
+  // диске. SELECT + все DELETE — в одной withExclusiveTransactionAsync (атомарность и изоляция от
+  // конкурентных запросов того же соединения, см. комментарий getOrders); удаление файлов — ПОСЛЕ
+  // коммита транзакции: при сбое DELETE файлы остаются на месте и записи в БД не бьются; mock://-URI
+  // сид-фото `deleteFileQuietly` пропускает молча. sync_outbox/sync_state чистятся вместе с
+  // заявками (Phase 12): застрявший курсор в sync_state пережил бы очистку и сломал бы повторный
+  // bootstrap-pull (сравнение с sync.lastUserId увидело бы «тот же пользователь» и не поставил бы
+  // курсор на 0). `File.exists`/`delete` синхронные — параллелизм (Promise.all) не нужен, поэтому
+  // цикл for..of.
   async clearDatabase(): Promise<void> {
     const database = await getDatabase();
     let photoRows: { uri: string }[] = [];
 
     await database.withExclusiveTransactionAsync(async (txn) => {
       photoRows = await txn.getAllAsync<{ uri: string }>('SELECT uri FROM service_order_photos');
-      await txn.execAsync('DELETE FROM service_order_photos; DELETE FROM service_orders;');
+      await txn.execAsync(
+        'DELETE FROM service_order_photos; DELETE FROM service_orders; DELETE FROM sync_outbox; DELETE FROM sync_state;',
+      );
     });
 
     for (const { uri } of photoRows) {
       deleteFileQuietly(toRuntimeUri(uri));
     }
     logger.info('[orderDatabaseService.clearDatabase] Локальная БД очищена.');
+  },
+
+  // Читает значение kv-таблицы sync_state (курсор pull / id пользователя последнего bootstrap).
+  // Отсутствие ключа (первый запуск) — null, не ошибка.
+  async getSyncStateValue(key: SyncStateKeyEnum): Promise<string | null> {
+    const database = await getDatabase();
+    const row = await database.getFirstAsync<{ value: string }>(
+      'SELECT value FROM sync_state WHERE key = ?',
+      key,
+    );
+
+    return row?.value ?? null;
+  },
+
+  // Пишет значение kv-таблицы sync_state вне транзакции применения страницы (используется
+  // bootstrapSync для sync.lastUserId — курсор пишется только внутри applyPullPage, см. ниже).
+  async setSyncStateValue(key: SyncStateKeyEnum, value: string): Promise<void> {
+    const database = await getDatabase();
+    await upsertSyncStateRow(database, key, value);
+  },
+
+  // Применяет одну pull-страницу атомарно: LWW-upsert заявок, удаление tombstone-заявок (фото +
+  // outbox + сама заявка) и сдвиг курсора — одной withExclusiveTransactionAsync (курсор персистится
+  // только вместе с успешным применением страницы, иначе сбой посреди страницы увёл бы курсор вперёд
+  // данных). Ошибку не ловим: пробрасываем вызывающему (orderSyncService), который решает, что делать
+  // с частично применённым прогоном страниц (курсор уже применённых страниц сохранён — см. task 4).
+  // Возвращает URI удалённых фото и id удалённых заявок — вызывающий делает post-commit побочные
+  // эффекты (удаление файлов, отмена напоминаний).
+  async applyPullPage(
+    orders: IPullOrderFields[],
+    tombstoneOrderIds: string[],
+    nextCursor: number,
+  ): Promise<IApplyPullPageResult> {
+    const database = await getDatabase();
+    const deletedPhotoUris: string[] = [];
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      for (const order of orders) {
+        await upsertOrder(txn, order);
+      }
+      for (const orderId of tombstoneOrderIds) {
+        deletedPhotoUris.push(...(await deleteTombstoneOrder(txn, orderId)));
+      }
+      await upsertSyncStateRow(txn, SyncStateKeyEnum.Cursor, String(nextCursor));
+    });
+
+    logger.debug(
+      `[orderDatabaseService.applyPullPage] Страница применена: заявок ${orders.length}, tombstone ${tombstoneOrderIds.length}, курсор → ${nextCursor}.`,
+    );
+
+    return { deletedPhotoUris, deletedOrderIds: tombstoneOrderIds };
   },
 };

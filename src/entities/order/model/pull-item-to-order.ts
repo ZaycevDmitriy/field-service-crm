@@ -7,8 +7,16 @@ import { logger } from '@/shared/lib/logger';
 
 // Поля заявки без photos: pull-контракт Phase 12 не несёт применимых фото (метаданные игнорируются,
 // см. sync-types.ts) — фото домена остаются связанными по order_id в локальной БД, apply-слой
-// (applyPullPage) трогает только строку service_orders.
-export type IPullOrderFields = Omit<IServiceOrder, 'photos'>;
+// (applyPullPage) трогает только строку service_orders. Серверные поля здесь ВСЕГДА заполнены
+// (в отличие от IServiceOrder, где они optional для локальных заявок до первого pull) — маппер ниже
+// заполняет их безусловно из обязательных полей серверного контракта.
+export type IPullOrderFields = Omit<IServiceOrder, 'photos'> &
+  Required<
+    Pick<
+      IServiceOrder,
+      'updatedSeq' | 'scheduledAt' | 'slotStart' | 'slotEnd' | 'createdAt' | 'updatedAt'
+    >
+  >;
 
 /**
  * Маппит серверный payload pull-элемента заявки в доменные поля (без photos). Канонические
