@@ -144,6 +144,11 @@ const RootNavigator: FC = () => {
 
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
+  const sessionStatus = useSessionStore((state) => state.status);
+  const user = useSessionStore((state) => state.user);
+  // Промис bootstrap БД (эффект ниже) — эффект синка ждёт его перед bootstrapSync, не полагаясь
+  // на порядок эффектов между рендерами. Ref, не state: сам промис не должен вызывать перерендер.
+  const dbReadyRef = useRef<Promise<void> | null>(null);
 
   // Android: клавиатура не должна двигать/резать контент над ней (экраны сами управляют скроллом/
   // отступами). Вызов вынесен из render-фазы Toaster — побочный эффект внешнего модуля не должен
@@ -162,8 +167,9 @@ const RootLayout: FC = () => {
   // сид, гидрация стора. initialize идемпотентен по флагу loading — StrictMode-дубль в dev безопасен.
   useEffect(() => {
     // Sweep осиротевших фото — строго ПОСЛЕ гидрации стора (список известных URI должен быть полным)
-    // и один раз за старт приложения (до открытия любых экранов съёмки).
-    useOrdersStore
+    // и один раз за старт приложения (до открытия любых экранов съёмки). Промис сохраняется в
+    // dbReadyRef — эффект синка ниже дожидается его перед первым bootstrapSync.
+    dbReadyRef.current = useOrdersStore
       .getState()
       .initialize()
       .then(() => {
@@ -184,6 +190,18 @@ const RootLayout: FC = () => {
       }
     });
   }, []);
+
+  // Триггер pull-синка (PDR client-sync §5, T-07): логин, restoreSession с уже валидной сессией и
+  // смена пользователя — везде, где sessionStatus/user.id меняются на аутентифицированные. Дожидается
+  // dbReadyRef (bootstrap БД выше) — пуллить в несуществующую схему нельзя. Ошибка pull не блокирует
+  // вход: bootstrapSync сама не бросает (см. use-orders-store.ts) — офлайн-логин остаётся рабочим.
+  useEffect(() => {
+    if (sessionStatus !== SessionStatusEnum.Authenticated || !user) {
+      return;
+    }
+    const userId = user.id;
+    dbReadyRef.current?.then(() => useOrdersStore.getState().bootstrapSync(userId));
+  }, [sessionStatus, user]);
 
   return (
     <SafeAreaProvider>

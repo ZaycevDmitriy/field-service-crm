@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { orderDatabaseService } from '../api';
+import { orderDatabaseService, pullOrders, SyncStateKeyEnum } from '../api';
 
 import { OrderFilterEnum } from './order-filter';
 import { ServiceOrderStatusEnum } from './order-status';
@@ -10,7 +10,7 @@ import type { IServiceOrder, IServiceOrderPhoto } from './types';
 
 import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
-import { cancelOrderRemindersByKey } from '@/shared/lib/notifications';
+import { cancelAllReminders, cancelOrderRemindersByKey } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Стор заявок (PDR §13.1). Держит только базовое состояние; производное (фильтрованный список,
@@ -18,6 +18,9 @@ import { ToastVariantEnum, useToastStore } from '@/shared/model';
 export interface IOrdersStore {
   orders: IServiceOrder[];
   loading: boolean;
+  // Состояние сетевого pull-синка (Phase 12) — отдельно от loading (гидрация из локальной БД):
+  // pull-to-refresh крутит спиннер по syncing, не блокируя список локальной гидрацией.
+  syncing: boolean;
   error: string | null;
   filter: OrderFilterEnum;
   search: string;
@@ -25,6 +28,13 @@ export interface IOrdersStore {
   initialize: () => Promise<void>;
   // Гидрация: грузит заявки из SQLite. Идемпотентна по флагу loading (нужна для pull-to-refresh).
   loadOrders: () => Promise<void>;
+  // Курсорный pull заявок с сервера (PDR client-sync §5, T-07): гидрирует стор из БД после
+  // применения. Ошибка не стирает локальные данные (офлайн — норма, PDR) — только лог + тост.
+  syncOrders: () => Promise<void>;
+  // Bootstrap синка при логине/смене пользователя: если userId отличается от последнего
+  // sync.lastUserId — локальные данные (заявки, фото, напоминания) очищаются перед pull с нулевого
+  // курсора (новый пользователь не должен видеть чужие заявки). Всегда завершается вызовом syncOrders.
+  bootstrapSync: (userId: string) => Promise<void>;
   setFilter: (filter: OrderFilterEnum) => void;
   setSearch: (query: string) => void;
   // Переходы статуса: меняют статус только при допустимом исходном (иначе no-op). Персист в БД —
@@ -118,6 +128,7 @@ const persistStatus = (
 export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
   orders: [],
   loading: false,
+  syncing: false,
   error: null,
   filter: OrderFilterEnum.All,
   search: '',
@@ -174,6 +185,74 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+
+  syncOrders: async () => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — синк не должен за ней
+    // ходить (иначе «no such table» → error-состояние списка).
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.syncOrders] STRESS_TEST: синк пропущен.');
+
+      return;
+    }
+    // Guard от повторного входа: дубль вызова, пока синк уже идёт (двойной pull-to-refresh,
+    // одновременный login-триггер и ручной pull-to-refresh) — no-op.
+    if (get().syncing) {
+      return;
+    }
+    set({ syncing: true });
+    try {
+      await pullOrders();
+      set({ orders: await orderDatabaseService.getOrders(), error: null });
+    } catch (error) {
+      // Ошибка синка НЕ стирает локальные данные (офлайн — норма, PDR): orders/error не трогаем,
+      // список остаётся как есть — только лог (один слой логирования) и тост.
+      logger.error('[useOrdersStore.syncOrders] Не удалось синхронизировать заявки.', error);
+      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось обновить заявки');
+    } finally {
+      set({ syncing: false });
+    }
+  },
+
+  bootstrapSync: async (userId) => {
+    // Dev-only стресс-тест виртуализации: БД не создана (см. initialize) — bootstrap не должен за
+    // ней ходить.
+    if (STRESS_TEST) {
+      logger.debug('[useOrdersStore.bootstrapSync] STRESS_TEST: bootstrap пропущен.');
+
+      return;
+    }
+    // Guard от повторного входа (StrictMode-дубль в dev, тот же паттерн, что в initialize): без
+    // него параллельный вызов мог бы увидеть ещё не обновлённый sync.lastUserId и wipe'нуть дважды.
+    if (get().loading) {
+      return;
+    }
+    set({ loading: true });
+    try {
+      const lastUserId = await orderDatabaseService.getSyncStateValue(SyncStateKeyEnum.LastUserId);
+      if (lastUserId !== userId) {
+        logger.info(
+          '[useOrdersStore.bootstrapSync] Смена пользователя — локальные заявки, фото и напоминания будут очищены.',
+        );
+        // orderDatabaseService напрямую (не get().clearDatabase()): у обоих общий флаг loading,
+        // уже занятый этим вызовом — store-метод молча пропустил бы очистку по своему же guard'у.
+        await orderDatabaseService.clearDatabase();
+        // Та же пара, что у кнопки «Очистить БД» в Settings — новый пользователь не должен получать
+        // уведомления по заявкам предыдущего.
+        await cancelAllReminders();
+        await orderDatabaseService.setSyncStateValue(SyncStateKeyEnum.LastUserId, userId);
+        set({ orders: await orderDatabaseService.getOrders(), error: null });
+      }
+    } catch (error) {
+      logger.error(
+        '[useOrdersStore.bootstrapSync] Не удалось подготовить локальные данные.',
+        error,
+      );
+    } finally {
+      set({ loading: false });
+    }
+
+    await get().syncOrders();
   },
 
   setFilter: (filter) => set({ filter }),
