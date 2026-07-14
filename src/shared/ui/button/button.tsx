@@ -19,6 +19,11 @@ export interface IButtonProps {
   // Явный цвет текста/индикатора для theme-independent поверхностей (напр. экран съёмки) — минует тему.
   textColor?: string;
   onPress: () => void;
+  // Устойчивый идентификатор для UI-автоматизации (mobile MCP/WebDriverAgent/Detox) — kebab-case,
+  // `<экран>-<роль>` (правило проекта, CLAUDE.md).
+  testID?: string;
+  // Уникальный в пределах экрана accessibility-лейбл; по умолчанию — `title` (видимый текст кнопки).
+  accessibilityLabel?: string;
 }
 
 export interface IVariantColors {
@@ -63,6 +68,8 @@ export const Button: FC<IButtonProps> = ({
   leftIcon,
   textColor,
   onPress,
+  testID,
+  accessibilityLabel,
 }) => {
   const colors = useColors();
   const isDisabled = disabled || loading;
@@ -75,6 +82,8 @@ export const Button: FC<IButtonProps> = ({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      testID={testID}
+      accessibilityLabel={accessibilityLabel ?? title}
       style={({ pressed }) => {
         const variantColors = resolveButtonColors(variant, colors, pressed);
         return [

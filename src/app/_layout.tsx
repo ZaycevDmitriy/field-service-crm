@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { type FC, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,11 +13,41 @@ import 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrdersStore } from '@/entities/order';
+import {
+  getAccessToken,
+  logout,
+  refreshSession,
+  restoreSession,
+  SessionStatusEnum,
+  useSessionStore,
+} from '@/entities/session';
 import { sweepOrphanPhotos } from '@/features/photo-capture';
+import { registerAuthBridge } from '@/shared/api';
 import { Spacing, useColorScheme } from '@/shared/config';
 import { configureNotifications } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 import { Toast } from '@/shared/ui';
+
+// Программного управления сплэшем нет — expo-splash-screen подключён только как config-плагин
+// (app.config.ts). Держим сплэш до первого разрешения статуса сессии (см. RootNavigator ниже),
+// поэтому auto-hide отключаем на уровне модуля (до монтирования дерева).
+SplashScreen.preventAutoHideAsync();
+
+// Мост между business-agnostic shared/api и entities/session регистрируется здесь, на app-слое —
+// это единственное место, которому разрешено знать про оба слайса одновременно (разрыв
+// зависимости shared → entities). Модульный вызов: выполняется один раз при импорте файла, до
+// первого рендера дерева и любых сетевых запросов.
+registerAuthBridge({
+  getAccessToken,
+  refreshSession,
+  onSessionExpired: () => {
+    // Второй 401 после успешного refresh (например, аккаунт деактивирован сервером) — локальная
+    // очистка сессии (logout идемпотентен и при уже сброшенном состоянии) плюс явное уведомление:
+    // разлогин не должен быть молчаливым для пользователя.
+    void logout();
+    useToastStore.getState().showToast(ToastVariantEnum.Info, 'Сессия истекла');
+  },
+});
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -79,6 +110,38 @@ const Toaster: FC = () => {
   );
 };
 
+// Route guard (PDR «Решения дизайна» Phase 10): без сессии доступен только экран входа, с сессией —
+// прежние экраны. `unknown` (до ответа restoreSession) трактуется как «ещё не вход» — экран входа
+// технически смонтирован под сплэшем, но не виден (см. эффект скрытия сплэша ниже).
+const RootNavigator: FC = () => {
+  const sessionStatus = useSessionStore((state) => state.status);
+  const isAuthenticated = sessionStatus === SessionStatusEnum.Authenticated;
+
+  // Сплэш скрывается один раз, как только статус перестал быть Unknown (первый ответ restoreSession) —
+  // не раньше, иначе экран входа/заявок мигнёт до того, как сессия определена.
+  useEffect(() => {
+    if (sessionStatus !== SessionStatusEnum.Unknown) {
+      SplashScreen.hideAsync();
+    }
+  }, [sessionStatus]);
+
+  return (
+    <Stack>
+      <Stack.Protected guard={isAuthenticated}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="orders/[orderId]" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="camera/[orderId]"
+          options={{ headerShown: false, presentation: 'fullScreenModal' }}
+        />
+      </Stack.Protected>
+      <Stack.Protected guard={!isAuthenticated}>
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+      </Stack.Protected>
+    </Stack>
+  );
+};
+
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
 
@@ -87,6 +150,12 @@ const RootLayout: FC = () => {
   // выполняться на каждый рендер компонента.
   useEffect(() => {
     KeyboardController.setInputMode(AndroidSoftInputModes.SOFT_INPUT_ADJUST_NOTHING);
+  }, []);
+
+  // Восстановление сессии из SecureStore — параллельно с bootstrap БД ниже (независимые операции).
+  // Пока статус остаётся Unknown, RootNavigator держит сплэш видимым (см. ниже).
+  useEffect(() => {
+    void restoreSession();
   }, []);
 
   // Однократный bootstrap БД при старте (не-реактивный getState): инициализация SQLite, идемпотентный
@@ -120,14 +189,7 @@ const RootLayout: FC = () => {
     <SafeAreaProvider>
       <KeyboardProvider>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="orders/[orderId]" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="camera/[orderId]"
-              options={{ headerShown: false, presentation: 'fullScreenModal' }}
-            />
-          </Stack>
+          <RootNavigator />
           <StatusBar style="auto" />
           <Toaster />
         </ThemeProvider>
