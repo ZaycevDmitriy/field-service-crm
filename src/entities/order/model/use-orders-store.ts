@@ -216,6 +216,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     } catch (error) {
       // Ошибка синка НЕ стирает локальные данные (офлайн — норма, PDR): orders/error не трогаем,
       // список остаётся как есть — только лог (один слой логирования) и тост.
+      // TODO(Phase 15, Sync UX): тост показывается и на авто-триггере при логине — каждый
+      // офлайн-вход встречает error-тостом, хотя офлайн — норма. Решить: авто-путь сделать тихим
+      // (только лог) либо оставить единый UX; сейчас syncOrders общий для pull-to-refresh и логина.
       logger.error('[useOrdersStore.syncOrders] Не удалось синхронизировать заявки.', error);
       useToastStore.getState().showToast(ToastVariantEnum.Error, 'Не удалось обновить заявки');
     } finally {
