@@ -50,9 +50,10 @@ export const DashboardPage: FC = () => {
     router.navigate({ pathname: '/orders/[orderId]', params: { orderId: nearestOrder.id } });
   };
   // Маршрут до ближайшей заявки во внешних Яндекс.Картах (работает и без разрешения геолокации).
+  // Заявка без координат (Phase 11: latitude/longitude nullable) — маршрут строить не от чего.
   const handleOpenRoute = () => {
-    if (nearestOrder) {
-      void openMapsRoute(nearestOrder);
+    if (nearestOrder && nearestOrder.latitude !== null && nearestOrder.longitude !== null) {
+      void openMapsRoute({ latitude: nearestOrder.latitude, longitude: nearestOrder.longitude });
     }
   };
   // Быстрые действия пока нефункциональны (создание заявки — Phase 3, скан — Phase 5) — честный

@@ -19,9 +19,13 @@ import { useAppStore } from '@/shared/model';
 export function useOrderDistanceLabel(order: IServiceOrder | null | undefined): string | null {
   const currentLocation = useAppStore((state) => state.currentLocation);
 
-  if (!order || !currentLocation) {
+  // Заявка без координат (Phase 11: latitude/longitude nullable) — дистанцию посчитать не от чего,
+  // сегмент скрывается тем же путём, что и отсутствие локации.
+  if (!order || !currentLocation || order.latitude === null || order.longitude === null) {
     return null;
   }
 
-  return formatDistanceLabel(getDistanceInKm(currentLocation, order));
+  return formatDistanceLabel(
+    getDistanceInKm(currentLocation, { latitude: order.latitude, longitude: order.longitude }),
+  );
 }

@@ -4,6 +4,7 @@ import { orderDatabaseService } from '../api';
 
 import { OrderFilterEnum } from './order-filter';
 import { ServiceOrderStatusEnum } from './order-status';
+import { PhotoSyncStatusEnum } from './photo-sync-status';
 import { makeStressOrders, STRESS_TEST, STRESS_TEST_COUNT } from './stress';
 import type { IServiceOrder, IServiceOrderPhoto } from './types';
 
@@ -138,7 +139,9 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     set({ loading: true });
     try {
       await orderDatabaseService.initDatabase();
-      await orderDatabaseService.seedDatabaseIfNeeded();
+      // Клиентский сид демо-данных удалён (Phase 11, PDR client-sync §5/T-05, решение Q-04) —
+      // демо-данные сидит сервер (FR-16). БД пуста до первого pull (Phase 12); пустой список —
+      // валидное состояние (EmptyState экранов), initDatabase создаёт схему без данных.
       set({ orders: await orderDatabaseService.getOrders(), error: null });
     } catch (error) {
       logger.error('[useOrdersStore.initialize] Не удалось инициализировать БД.', error);
@@ -268,6 +271,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
       uri,
       ...(trimmedComment ? { comment: trimmedComment } : {}),
       createdAt: new Date().toISOString(),
+      syncStatus: PhotoSyncStatusEnum.Local,
     };
     set({
       orders: get().orders.map((item) =>
