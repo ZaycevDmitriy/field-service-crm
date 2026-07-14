@@ -1,7 +1,7 @@
 import { create, isAxiosError, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 import { getAccessToken, onSessionExpired, refreshSession } from './auth-bridge';
-import { ApiErrorCodeEnum, type IApiErrorEnvelope } from './types';
+import { ApiErrorCodeEnum, isApiErrorEnvelope, type IApiErrorEnvelope } from './types';
 
 import { logger } from '@/shared/lib/logger';
 
@@ -15,31 +15,32 @@ const REQUEST_TIMEOUT_MS = 15000;
 // пароль на логине сам запустит refresh, а 401 самого refresh-запроса зациклит цепочку).
 const AUTH_ENDPOINT_PATHS = ['/v1/auth/login', '/v1/auth/refresh', '/v1/auth/logout'];
 
-const isAuthEndpoint = (url: string | undefined): boolean =>
-  AUTH_ENDPOINT_PATHS.some((path) => (url ?? '').includes(path));
+// Точное совпадение пути (без query), не подстрочное: будущий `/v1/auth/login-history` не должен
+// случайно матчиться с `/v1/auth/login` и терять 401-логику. Экспорт — только для юнит-тестов,
+// в публичный API сегмента (index.ts) не входит.
+export const isAuthEndpoint = (url: string | undefined): boolean => {
+  const pathname = (url ?? '').split('?')[0];
 
-// Множество валидных кодов ошибки — для проверки на границе (тело ответа сервера — внешние данные).
-const API_ERROR_CODES = new Set<string>(Object.values(ApiErrorCodeEnum));
-
-const isApiErrorCode = (value: unknown): value is ApiErrorCodeEnum =>
-  typeof value === 'string' && API_ERROR_CODES.has(value);
+  return AUTH_ENDPOINT_PATHS.some((path) => pathname.endsWith(path));
+};
 
 export const httpClient = create({
   baseURL: process.env.EXPO_PUBLIC_API_URL ?? DEV_API_URL_FALLBACK,
   timeout: REQUEST_TIMEOUT_MS,
 });
 
-// Нормализует axios-ошибку в единый конверт: ответ сервера с {code, message} — как есть; сеть/таймаут
-// (ответ отсутствует) — синтетический network_error.
+// Нормализует ошибку в единый конверт: уже нормализованный конверт — как есть (идемпотентность:
+// реджект refreshSession в 401-интерсепторе прошёл нормализацию auth-эндпоинта и не должен
+// схлопнуться в network_error); ответ сервера с {code, message} — как есть; сеть/таймаут — network_error.
 export const toApiError = (error: unknown): IApiErrorEnvelope => {
+  if (isApiErrorEnvelope(error)) {
+    return error;
+  }
+
   if (isAxiosError(error)) {
-    const data = error.response?.data as Partial<IApiErrorEnvelope> | undefined;
-    if (isApiErrorCode(data?.code) && typeof data.message === 'string') {
-      return {
-        code: data.code,
-        message: data.message,
-        ...(data.details !== undefined ? { details: data.details } : {}),
-      };
+    const data: unknown = error.response?.data;
+    if (isApiErrorEnvelope(data)) {
+      return data;
     }
   }
 

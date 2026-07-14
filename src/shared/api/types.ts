@@ -25,3 +25,20 @@ export interface IApiErrorEnvelope {
   message: string;
   details?: unknown;
 }
+
+// Множество валидных кодов ошибки — для проверки на границе (тело ответа сервера — внешние данные).
+const API_ERROR_CODES = new Set<string>(Object.values(ApiErrorCodeEnum));
+
+export const isApiErrorCode = (value: unknown): value is ApiErrorCodeEnum =>
+  typeof value === 'string' && API_ERROR_CODES.has(value);
+
+// Type guard конверта ошибки: отличает уже нормализованный конверт (реджект httpClient) от сырых
+// ошибок (axios, нативные) — потребители не должны кастовать `catch`-значение вслепую.
+export const isApiErrorEnvelope = (value: unknown): value is IApiErrorEnvelope => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<IApiErrorEnvelope>;
+
+  return isApiErrorCode(candidate.code) && typeof candidate.message === 'string';
+};

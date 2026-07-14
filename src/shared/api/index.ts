@@ -2,4 +2,4 @@
 // регистрирует app-слой через registerAuthBridge (см. auth-bridge.ts).
 export { httpClient, toApiError } from './http-client';
 export { registerAuthBridge, type IAuthBridge } from './auth-bridge';
-export { ApiErrorCodeEnum, type IApiErrorEnvelope } from './types';
+export { ApiErrorCodeEnum, isApiErrorEnvelope, type IApiErrorEnvelope } from './types';

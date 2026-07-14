@@ -79,15 +79,16 @@ export const login = async (email: string, password: string): Promise<void> => {
   const response = await httpClient.post<ILoginResponse>('/v1/auth/login', { email, password });
   const { accessToken, refreshToken, user } = response.data;
 
-  currentAccessToken = accessToken;
-  currentRefreshToken = refreshToken;
-
+  // Сначала персист, затем in-memory кэш и стор: сбой setItemAsync реджектит login целиком, не
+  // оставляя полусостояния (токены в памяти при не-Authenticated статусе).
   await Promise.all([
     SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken, SECURE_STORE_OPTIONS),
     SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken, SECURE_STORE_OPTIONS),
     SecureStore.setItemAsync(USER_KEY, JSON.stringify(user), SECURE_STORE_OPTIONS),
   ]);
 
+  currentAccessToken = accessToken;
+  currentRefreshToken = refreshToken;
   useSessionStore.getState().setSession(user);
   logger.info('[session-service.login] Вход выполнен.');
 };

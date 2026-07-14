@@ -4,14 +4,18 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { login } from '@/entities/session';
-import { ApiErrorCodeEnum, type IApiErrorEnvelope } from '@/shared/api';
+import { ApiErrorCodeEnum, isApiErrorEnvelope } from '@/shared/api';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { Button, IconSymbol, Input, Text } from '@/shared/ui';
 
 // Читаемое сообщение по коду ошибки входа, без технических деталей (DoD фазы: «неверные данные /
-// lockout → читаемые сообщения»). Прочие коды (internal_error и т.п.) — маловероятны на логине,
-// общий фоллбэк.
-const resolveLoginErrorMessage = (error: IApiErrorEnvelope): string => {
+// lockout → читаемые сообщения»). Не-конверт (нативный сбой SecureStore внутри login и т.п.) и
+// прочие коды (internal_error) — маловероятны на логине, общий фоллбэк.
+const resolveLoginErrorMessage = (error: unknown): string => {
+  if (!isApiErrorEnvelope(error)) {
+    return 'Не удалось войти. Попробуйте ещё раз.';
+  }
+
   switch (error.code) {
     case ApiErrorCodeEnum.InvalidCredentials:
       return 'Неверный email или пароль';
@@ -44,7 +48,7 @@ export const LoginPage: FC = () => {
       // Успех: entities/session переводит статус в Authenticated — route guard в src/app/_layout.tsx
       // сам скрывает экран входа, явная навигация отсюда не нужна.
     } catch (error) {
-      setErrorMessage(resolveLoginErrorMessage(error as IApiErrorEnvelope));
+      setErrorMessage(resolveLoginErrorMessage(error));
     } finally {
       setLoading(false);
     }

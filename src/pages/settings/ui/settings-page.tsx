@@ -88,6 +88,8 @@ export const SettingsPage: FC = () => {
               variant="danger"
               fullWidth
               onPress={handleLogout}
+              testID="settings-logout-button"
+              accessibilityLabel="Выйти из аккаунта"
               leftIcon={
                 <IconSymbol
                   name="rectangle.portrait.and.arrow.right"
