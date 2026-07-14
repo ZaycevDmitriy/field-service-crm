@@ -12,3 +12,15 @@ export {
   type IOrderStatusColors,
 } from './order-status-colors';
 export { useOrderStatusColors } from './use-order-status-colors';
+// Внутренние типы/маппер pull-контракта синка (PDR client-sync §5, T-07) — деталь слайса, наружу
+// (entities/order/index.ts) намеренно не переэкспортируются.
+export {
+  isPullUnassignedItem,
+  type IPullItem,
+  type IPullOrderItem,
+  type IPullOrderPayload,
+  type IPullOrderPhotoItem,
+  type IPullOrdersResponse,
+  type IPullUnassignedItem,
+} from './sync-types';
+export { pullItemToOrder, type IPullOrderFields } from './pull-item-to-order';

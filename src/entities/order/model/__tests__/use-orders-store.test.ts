@@ -1,10 +1,10 @@
-import { orderDatabaseService } from '../../api';
+import { orderDatabaseService, pullOrders, SyncStateKeyEnum } from '../../api';
 import { ServiceOrderStatusEnum } from '../order-status';
 import { PhotoSyncStatusEnum } from '../photo-sync-status';
 import type { IServiceOrder } from '../types';
 import { useOrdersStore } from '../use-orders-store';
 
-import { cancelOrderRemindersByKey } from '@/shared/lib/notifications';
+import { cancelAllReminders, cancelOrderRemindersByKey } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Изолируем стор от SQLite: orderDatabaseService — единственная сторонняя зависимость guard-ов
@@ -17,17 +17,24 @@ jest.mock('../../api', () => ({
     addOrderPhoto: jest.fn(),
     deleteOrderPhoto: jest.fn(),
     clearDatabase: jest.fn(),
+    getSyncStateValue: jest.fn(),
+    setSyncStateValue: jest.fn(),
   },
+  pullOrders: jest.fn(),
+  SyncStateKeyEnum: { Cursor: 'sync.cursor', LastUserId: 'sync.lastUserId' },
 }));
 
 // Изолируем стор от expo-notifications: cancelOrderRemindersByKey (M6) — единственная зависимость
-// сегмента notifications, которая нужна переходам статуса.
+// сегмента notifications, которая нужна переходам статуса; cancelAllReminders — bootstrapSync (Phase 12).
 jest.mock('@/shared/lib/notifications', () => ({
   cancelOrderRemindersByKey: jest.fn(),
+  cancelAllReminders: jest.fn(),
 }));
 
 const mockedService = orderDatabaseService as jest.Mocked<typeof orderDatabaseService>;
 const mockedCancelReminders = cancelOrderRemindersByKey as jest.Mock;
+const mockedCancelAllReminders = cancelAllReminders as jest.Mock;
+const mockedPullOrders = pullOrders as jest.Mock;
 
 // URI снимка для тестов фотоотчёта (общий для addOrderPhoto/removeOrderPhoto/STRESS_TEST).
 const PHOTO_URI = 'file://photo.jpg';
@@ -50,7 +57,7 @@ const makeOrder = (overrides: Partial<IServiceOrder> = {}): IServiceOrder => ({
 
 // Сброс стора между тестами: модульный синглтон (см. toast-store.test.ts).
 const resetStore = (orders: IServiceOrder[] = []) =>
-  useOrdersStore.setState({ orders, loading: false, error: null });
+  useOrdersStore.setState({ orders, loading: false, syncing: false, error: null });
 
 describe('useOrdersStore', () => {
   beforeEach(() => {
@@ -58,6 +65,8 @@ describe('useOrdersStore', () => {
     mockedService.updateOrderStatus.mockResolvedValue(undefined);
     mockedService.addOrderPhoto.mockResolvedValue(undefined);
     mockedService.deleteOrderPhoto.mockResolvedValue(undefined);
+    mockedService.getSyncStateValue.mockResolvedValue(null);
+    mockedPullOrders.mockResolvedValue(undefined);
     resetStore();
     useToastStore.setState({ toasts: [] });
   });
@@ -419,6 +428,184 @@ describe('useOrdersStore', () => {
 
       expect(mockedService.clearDatabase).not.toHaveBeenCalled();
       expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Info }]);
+    });
+  });
+
+  describe('syncOrders', () => {
+    it('успешный pull: гидрирует orders из БД, syncing переключается true → false', async () => {
+      let resolvePull: () => void = () => undefined;
+      mockedPullOrders.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePull = resolve;
+          }),
+      );
+      mockedService.getOrders.mockResolvedValue([makeOrder()]);
+
+      const pending = useOrdersStore.getState().syncOrders();
+      expect(useOrdersStore.getState().syncing).toBe(true);
+
+      resolvePull();
+      await pending;
+
+      expect(useOrdersStore.getState().syncing).toBe(false);
+      expect(useOrdersStore.getState().orders).toEqual([makeOrder()]);
+    });
+
+    it('guard: повторный вызов, пока синк уже идёт, — no-op (не дублирует pullOrders)', async () => {
+      let resolvePull: () => void = () => undefined;
+      mockedPullOrders.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePull = resolve;
+          }),
+      );
+      mockedService.getOrders.mockResolvedValue([]);
+
+      const first = useOrdersStore.getState().syncOrders();
+      await useOrdersStore.getState().syncOrders();
+      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+
+      resolvePull();
+      await first;
+    });
+
+    it('guard: синк во время bootstrap/гидрации (loading) — no-op, гонка с wipe исключена', async () => {
+      useOrdersStore.setState({ loading: true });
+
+      await useOrdersStore.getState().syncOrders();
+
+      expect(mockedPullOrders).not.toHaveBeenCalled();
+      expect(useOrdersStore.getState().syncing).toBe(false);
+    });
+
+    it('ошибка pull не стирает локальные данные — orders остаются как есть, только лог + тост', async () => {
+      resetStore([makeOrder({ id: 'existing-order' })]);
+      mockedPullOrders.mockRejectedValue(new Error('network down'));
+
+      await useOrdersStore.getState().syncOrders();
+
+      expect(useOrdersStore.getState().orders).toEqual([makeOrder({ id: 'existing-order' })]);
+      expect(useOrdersStore.getState().error).toBeNull();
+      expect(useOrdersStore.getState().syncing).toBe(false);
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
+    });
+
+    it('STRESS_TEST: pullOrders не вызывается', async () => {
+      let stressStore!: typeof useOrdersStore;
+      let stressPullOrders!: jest.Mock;
+
+      jest.isolateModules(() => {
+        jest.doMock('../stress', () => ({
+          STRESS_TEST: true,
+          STRESS_TEST_COUNT: 3,
+          makeStressOrders: (count: number) =>
+            Array.from({ length: count }, (_, i) => makeOrder({ id: `stress-${i}` })),
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressStore = require('../use-orders-store').useOrdersStore;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressPullOrders = require('../../api').pullOrders;
+      });
+
+      await stressStore.getState().syncOrders();
+
+      expect(stressPullOrders).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bootstrapSync', () => {
+    it('тот же пользователь (sync.lastUserId совпадает) — БД не очищается, только syncOrders', async () => {
+      mockedService.getSyncStateValue.mockResolvedValue('user-1');
+      mockedService.getOrders.mockResolvedValue([]);
+
+      await useOrdersStore.getState().bootstrapSync('user-1');
+
+      expect(mockedService.clearDatabase).not.toHaveBeenCalled();
+      expect(mockedCancelAllReminders).not.toHaveBeenCalled();
+      expect(mockedService.setSyncStateValue).not.toHaveBeenCalled();
+      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+    });
+
+    it('смена пользователя — wipe: clearDatabase + cancelAllReminders + запись нового sync.lastUserId', async () => {
+      mockedService.getSyncStateValue.mockResolvedValue('user-1');
+      mockedService.clearDatabase.mockResolvedValue(undefined);
+      mockedService.getOrders.mockResolvedValue([]);
+
+      await useOrdersStore.getState().bootstrapSync('user-2');
+
+      expect(mockedService.clearDatabase).toHaveBeenCalledTimes(1);
+      expect(mockedCancelAllReminders).toHaveBeenCalledTimes(1);
+      expect(mockedService.setSyncStateValue).toHaveBeenCalledWith(
+        SyncStateKeyEnum.LastUserId,
+        'user-2',
+      );
+      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+    });
+
+    it('первый запуск (sync.lastUserId ещё не задан) трактуется как смена пользователя — wipe', async () => {
+      mockedService.getSyncStateValue.mockResolvedValue(null);
+      mockedService.getOrders.mockResolvedValue([]);
+
+      await useOrdersStore.getState().bootstrapSync('user-1');
+
+      expect(mockedService.clearDatabase).toHaveBeenCalledTimes(1);
+      expect(mockedService.setSyncStateValue).toHaveBeenCalledWith(
+        SyncStateKeyEnum.LastUserId,
+        'user-1',
+      );
+    });
+
+    it('ошибка pull (внутри итогового syncOrders) не бросает — bootstrapSync завершается штатно', async () => {
+      mockedService.getSyncStateValue.mockResolvedValue('user-1');
+      mockedService.getOrders.mockResolvedValue([]);
+      mockedPullOrders.mockRejectedValue(new Error('network down'));
+
+      await expect(useOrdersStore.getState().bootstrapSync('user-1')).resolves.toBeUndefined();
+    });
+
+    it('guard: повторный вызов, пока bootstrap уже идёт, — no-op (StrictMode-дубль)', async () => {
+      let resolveGetSyncState: (value: string | null) => void = (_value) => undefined;
+      mockedService.getSyncStateValue.mockImplementation(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGetSyncState = resolve;
+          }),
+      );
+      mockedService.getOrders.mockResolvedValue([]);
+
+      const first = useOrdersStore.getState().bootstrapSync('user-1');
+      await useOrdersStore.getState().bootstrapSync('user-1');
+      expect(mockedService.getSyncStateValue).toHaveBeenCalledTimes(1);
+
+      resolveGetSyncState('user-1');
+      await first;
+    });
+
+    it('STRESS_TEST: getSyncStateValue/pullOrders не вызываются', async () => {
+      let stressStore!: typeof useOrdersStore;
+      let stressService!: typeof mockedService;
+      let stressPullOrders!: jest.Mock;
+
+      jest.isolateModules(() => {
+        jest.doMock('../stress', () => ({
+          STRESS_TEST: true,
+          STRESS_TEST_COUNT: 3,
+          makeStressOrders: (count: number) =>
+            Array.from({ length: count }, (_, i) => makeOrder({ id: `stress-${i}` })),
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressStore = require('../use-orders-store').useOrdersStore;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressService = require('../../api').orderDatabaseService;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        stressPullOrders = require('../../api').pullOrders;
+      });
+
+      await stressStore.getState().bootstrapSync('user-1');
+
+      expect(stressService.getSyncStateValue).not.toHaveBeenCalled();
+      expect(stressPullOrders).not.toHaveBeenCalled();
     });
   });
 

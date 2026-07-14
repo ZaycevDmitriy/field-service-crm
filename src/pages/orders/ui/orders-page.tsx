@@ -1,14 +1,14 @@
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useCallback, useDeferredValue, useMemo, type FC } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { OrdersListEmpty } from './orders-list-empty';
 import { OrdersListHeader } from './orders-list-header';
 
 import { OrderCard, useOrdersStore, type IServiceOrder } from '@/entities/order';
 import { getFilteredOrders } from '@/features/order-filter';
-import { Spacing } from '@/shared/config';
+import { Spacing, useColors } from '@/shared/config';
 import { Screen, Text } from '@/shared/ui';
 
 const keyExtractor = (item: IServiceOrder): string => item.id;
@@ -25,9 +25,12 @@ const OrdersSectionLabel: FC = () => (
 
 export const OrdersPage: FC = () => {
   const router = useRouter();
+  const colors = useColors();
   const orders = useOrdersStore((state) => state.orders);
   const filter = useOrdersStore((state) => state.filter);
   const search = useOrdersStore((state) => state.search);
+  const syncing = useOrdersStore((state) => state.syncing);
+  const syncOrders = useOrdersStore((state) => state.syncOrders);
 
   // Отзывчивый поиск: ввод мгновенный, пересчёт идёт по «отстающему» значению и прерывается следующим
   // нажатием.
@@ -62,6 +65,14 @@ export const OrdersPage: FC = () => {
         ListEmptyComponent={OrdersListEmpty}
         ItemSeparatorComponent={ItemSeparator}
         maintainVisibleContentPosition={maintainVisibleContentPosition}
+        refreshControl={
+          <RefreshControl
+            refreshing={syncing}
+            onRefresh={syncOrders}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentContainerStyle={styles.listContent}
