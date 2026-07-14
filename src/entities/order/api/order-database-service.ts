@@ -288,6 +288,15 @@ const isLatitudeNotNull = async (database: SQLiteDatabase): Promise<boolean> => 
 // первым), поэтому SELECT явным списком переносит их без потерь. FK service_order_photos.order_id
 // разрешается по ИМЕНИ таблицы в рантайме — после RENAME обратно в service_orders ссылка остаётся
 // рабочей без изменений в самой service_order_photos.
+//
+// ПРЕДПОСЫЛКА (несущая): DROP TABLE service_orders при строках-фото в service_order_photos проходит
+// только потому, что на этом соединении FK ВЫКЛЮЧЕНЫ. `PRAGMA foreign_keys = ON` из initDatabase
+// действует лишь на основное соединение, а withExclusiveTransactionAsync выполняется на ОТДЕЛЬНОМ
+// (Transaction.createAsync в expo-sqlite), где действует дефолт SQLite — OFF. С включёнными FK
+// DROP выполняет implicit DELETE всех строк и упал бы с «FOREIGN KEY constraint failed» на любом
+// устройстве с фото (данные целы — транзакция откатится, но миграция не завершится никогда).
+// Включить FK внутри нельзя: PRAGMA foreign_keys — no-op в открытой транзакции. При смене
+// поведения expo-sqlite (FK по умолчанию на новых соединениях) rebuild потребует переработки.
 const dropCoordinatesNotNull = async (database: SQLiteDatabase): Promise<void> => {
   logger.debug(
     '[orderDatabaseService.migrateOrdersSchema] Снимаю NOT NULL с latitude/longitude (table rebuild).',

@@ -16,6 +16,10 @@ export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, on
   const colors = useColors();
   // Дистанция — производное от текущей локации; null → сегмент скрыт (локация недоступна).
   const distanceLabel = useOrderDistanceLabel(order);
+  // Заявка без координат (Phase 11: latitude/longitude nullable) — маршрут строить не от чего,
+  // кнопка «Маршрут» скрывается (молчаливый no-op по тапу нарушал бы принцип честного фидбека, L11);
+  // тот же паттерн, что OpenRouteButton в деталях заявки.
+  const hasCoordinates = order.latitude !== null && order.longitude !== null;
 
   return (
     <View style={[styles.hero, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -48,18 +52,20 @@ export const NearestOrderCard: FC<INearestOrderCardProps> = ({ order, onOpen, on
           <View style={styles.ctaPrimary}>
             <Button title="Открыть заявку" variant="primary" fullWidth onPress={onOpen} />
           </View>
-          <Button
-            title="Маршрут"
-            variant="secondary"
-            onPress={onRoute}
-            leftIcon={
-              <IconSymbol
-                name="arrow.triangle.turn.up.right.diamond.fill"
-                size={18}
-                color={colors.textPrimary}
-              />
-            }
-          />
+          {hasCoordinates ? (
+            <Button
+              title="Маршрут"
+              variant="secondary"
+              onPress={onRoute}
+              leftIcon={
+                <IconSymbol
+                  name="arrow.triangle.turn.up.right.diamond.fill"
+                  size={18}
+                  color={colors.textPrimary}
+                />
+              }
+            />
+          ) : null}
         </View>
       </View>
     </View>
