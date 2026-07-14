@@ -70,12 +70,14 @@ const applyPageSideEffects = async (
  */
 export async function pullOrders(): Promise<void> {
   const storedCursor = await orderDatabaseService.getSyncStateValue(SyncStateKeyEnum.Cursor);
-  let cursor = storedCursor === null ? DEFAULT_CURSOR : Number(storedCursor);
+  // Значению из БД не доверяем (та же граница, что resolveOrderStatus): повреждённый курсор дал бы
+  // `cursor=NaN` в query на каждый синк (перманентный 400 до wipe) — фоллбэк на 0 безопасен,
+  // merge идемпотентен по LWW.
+  const parsedCursor = storedCursor === null ? DEFAULT_CURSOR : Number(storedCursor);
+  let cursor = Number.isFinite(parsedCursor) ? parsedCursor : DEFAULT_CURSOR;
   logger.debug(`[orderSyncService.pullOrders] Старт: курсор ${cursor}.`);
 
-  let pageCount = 0;
-
-  for (pageCount = 1; pageCount <= MAX_PAGES; pageCount += 1) {
+  for (let pageCount = 1; pageCount <= MAX_PAGES; pageCount += 1) {
     const response = await httpClient.get<IPullOrdersResponse>('/v1/sync/orders', {
       params: { cursor, limit: PAGE_LIMIT },
     });

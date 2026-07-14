@@ -200,6 +200,15 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     if (get().syncing) {
       return;
     }
+    // Guard от гонки с bootstrapSync (флаг loading): pull-to-refresh во время wipe при смене
+    // пользователя прочитал бы ещё не стёртый курсор предыдущего пользователя и спуллил бы с него
+    // под новым токеном — курсор ушёл бы «вперёд данных», и старые заявки молча потерялись бы
+    // (финальный syncOrders внутри bootstrapSync не самокорректирует: он no-op по guard'у syncing).
+    if (get().loading) {
+      logger.debug('[useOrdersStore.syncOrders] Идёт bootstrap/гидрация — синк пропущен.');
+
+      return;
+    }
     set({ syncing: true });
     try {
       await pullOrders();

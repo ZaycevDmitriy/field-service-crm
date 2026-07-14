@@ -145,7 +145,9 @@ const RootNavigator: FC = () => {
 const RootLayout: FC = () => {
   const colorScheme = useColorScheme();
   const sessionStatus = useSessionStore((state) => state.status);
-  const user = useSessionStore((state) => state.user);
+  // Подписка на id, не на объект user: setSession кладёт новый объект — эффект синка ниже не должен
+  // перезапускаться (и дёргать сетевой pull) от смены ссылки при том же пользователе.
+  const userId = useSessionStore((state) => state.user?.id);
   // Промис bootstrap БД (эффект ниже) — эффект синка ждёт его перед bootstrapSync, не полагаясь
   // на порядок эффектов между рендерами. Ref, не state: сам промис не должен вызывать перерендер.
   const dbReadyRef = useRef<Promise<void> | null>(null);
@@ -196,12 +198,11 @@ const RootLayout: FC = () => {
   // dbReadyRef (bootstrap БД выше) — пуллить в несуществующую схему нельзя. Ошибка pull не блокирует
   // вход: bootstrapSync сама не бросает (см. use-orders-store.ts) — офлайн-логин остаётся рабочим.
   useEffect(() => {
-    if (sessionStatus !== SessionStatusEnum.Authenticated || !user) {
+    if (sessionStatus !== SessionStatusEnum.Authenticated || !userId) {
       return;
     }
-    const userId = user.id;
     dbReadyRef.current?.then(() => useOrdersStore.getState().bootstrapSync(userId));
-  }, [sessionStatus, user]);
+  }, [sessionStatus, userId]);
 
   return (
     <SafeAreaProvider>

@@ -101,6 +101,17 @@ describe('orderSyncService.pullOrders', () => {
     });
   });
 
+  it('повреждённый курсор в sync_state (не число) — фоллбэк на 0, NaN в запрос не уходит', async () => {
+    mockedGetSyncStateValue.mockResolvedValue('не-число');
+    mockedGet.mockResolvedValueOnce({ data: { items: [], nextCursor: 0 } });
+
+    await pullOrders();
+
+    expect(mockedGet).toHaveBeenCalledWith(SYNC_ORDERS_URL, {
+      params: { cursor: 0, limit: 200 },
+    });
+  });
+
   it('safety-lag: неполная страница (меньше limit) останавливает пагинацию без лишних запросов', async () => {
     const fullPage = Array.from({ length: 200 }, (_, i) => makeOrderItem(`order-${i}`, i + 1));
     const shortPage = [makeOrderItem('order-tail', 250)];

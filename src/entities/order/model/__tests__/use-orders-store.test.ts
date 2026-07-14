@@ -470,6 +470,15 @@ describe('useOrdersStore', () => {
       await first;
     });
 
+    it('guard: синк во время bootstrap/гидрации (loading) — no-op, гонка с wipe исключена', async () => {
+      useOrdersStore.setState({ loading: true });
+
+      await useOrdersStore.getState().syncOrders();
+
+      expect(mockedPullOrders).not.toHaveBeenCalled();
+      expect(useOrdersStore.getState().syncing).toBe(false);
+    });
+
     it('ошибка pull не стирает локальные данные — orders остаются как есть, только лог + тост', async () => {
       resetStore([makeOrder({ id: 'existing-order' })]);
       mockedPullOrders.mockRejectedValue(new Error('network down'));
