@@ -1,5 +1,6 @@
 export type { IServiceOrder, IServiceOrderPhoto } from './types';
 export { ServiceOrderStatusEnum, OrderStatusLabel, isServiceOrderStatus } from './order-status';
+export { PhotoSyncStatusEnum } from './photo-sync-status';
 export { OrderFilterEnum, OrderFilterLabel } from './order-filter';
 export { useOrdersStore, type IOrdersStore } from './use-orders-store';
 export { getNearestOrder } from './get-nearest-order';

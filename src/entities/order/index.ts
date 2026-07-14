@@ -9,6 +9,7 @@ export type {
 export {
   ServiceOrderStatusEnum,
   OrderStatusLabel,
+  PhotoSyncStatusEnum,
   OrderFilterEnum,
   OrderFilterLabel,
   useOrdersStore,

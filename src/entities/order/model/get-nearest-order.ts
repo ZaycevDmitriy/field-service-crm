@@ -16,13 +16,21 @@ const toMinutes = (time: string): number => {
   return h * 60 + m;
 };
 
+// Type guard: заявка с заполненными координатами (сервер допускает null — Phase 11). shared/lib/geo
+// остаётся строгим (не размывается null-ами) — фильтрация до вызова getDistanceInKm, здесь.
+const hasCoordinates = (
+  order: IServiceOrder,
+): order is IServiceOrder & { latitude: number; longitude: number } =>
+  order.latitude !== null && order.longitude !== null;
+
 /**
  * Возвращает ближайшую активную заявку (статус New или InProgress). Если активных заявок нет —
  * `undefined`.
  *
  * При наличии координат работника «ближайшая» = минимальная геодистанция (Haversine) до адреса
- * заявки. Без локации (отказ/ещё не получена) — fallback на самую раннюю по времени визита
- * (`scheduledTime`), как в Phase 3.
+ * заявки — из ранжирования исключаются заявки без координат (Phase 11: latitude/longitude nullable).
+ * Без локации (отказ/ещё не получена), а также если ни у одной активной заявки нет координат —
+ * fallback на самую раннюю по времени визита (`scheduledTime`), как в Phase 3.
  */
 export function getNearestOrder(
   orders: IServiceOrder[],
@@ -38,14 +46,17 @@ export function getNearestOrder(
     return undefined;
   }
 
-  // С локацией — ближайшая по геодистанции (координаты заявки структурно совместимы с IGeoPoint).
+  // С локацией — ближайшая по геодистанции среди заявок с координатами.
   if (userCoords) {
-    return active.reduce((nearest, order) =>
-      getDistanceInKm(userCoords, order) < getDistanceInKm(userCoords, nearest) ? order : nearest,
-    );
+    const withCoordinates = active.filter(hasCoordinates);
+    if (withCoordinates.length > 0) {
+      return withCoordinates.reduce((nearest, order) =>
+        getDistanceInKm(userCoords, order) < getDistanceInKm(userCoords, nearest) ? order : nearest,
+      );
+    }
   }
 
-  // Без локации — самая ранняя по времени визита.
+  // Без локации (или ни у одной активной заявки нет координат) — самая ранняя по времени визита.
   return active.reduce((nearest, order) =>
     toMinutes(order.scheduledTime) < toMinutes(nearest.scheduledTime) ? order : nearest,
   );

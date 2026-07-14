@@ -16,13 +16,22 @@ export interface IOpenRouteButtonProps {
 export const OpenRouteButton: FC<IOpenRouteButtonProps> = ({ order, fullWidth = true }) => {
   const colors = useColors();
 
+  // Заявка без координат (Phase 11: latitude/longitude nullable) — маршрут строить не от чего,
+  // кнопка не рендерится (сигнатура openMapsRoute/IRouteDestination не меняется).
+  if (order.latitude === null || order.longitude === null) {
+    return null;
+  }
+  // Локальный const с уже сузенными полями: TS не переносит narrowing вложенного свойства
+  // (order.latitude !== null) на весь объект order при передаче его в другую функцию.
+  const destination = { latitude: order.latitude, longitude: order.longitude };
+
   return (
     <Button
       title="Открыть маршрут"
       variant="secondary"
       fullWidth={fullWidth}
       onPress={() => {
-        void openMapsRoute(order);
+        void openMapsRoute(destination);
       }}
       leftIcon={
         <IconSymbol

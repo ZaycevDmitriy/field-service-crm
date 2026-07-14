@@ -1,8 +1,8 @@
 import { File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
-import { MOCK_SERVICE_ORDERS } from '../model/mock';
 import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
+import { isPhotoSyncStatus, PhotoSyncStatusEnum } from '../model/photo-sync-status';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
@@ -10,19 +10,24 @@ import { deleteFileQuietly } from '@/shared/lib/fs';
 import { logger } from '@/shared/lib/logger';
 
 // Database-сервис заявок — деталь реализации слайса (наружу через публичный API не выносится).
-// Инкапсулирует expo-sqlite: схему, сид и запросы заявок. Соединение берёт из project-agnostic
+// Инкапсулирует expo-sqlite: схему и запросы заявок. Соединение берёт из project-agnostic
 // клиента `@/shared/lib/db`. Потребитель — только стор слайса (`useOrdersStore`).
 //
-// Отклонение от PDR §14: схема выравнена по фактическому `IServiceOrder`, а не дословно по PDR.
-// Колонок `scheduled_at`/`created_at`/`updated_at` из §14 в домене пока нет (реальные даты — позже).
-// Phase 6 добавила `latitude`/`longitude` и убрала производный `distance_label`; схема версионируется
-// через `PRAGMA user_version` с ручной миграцией v1→v2 в `initDatabase` (см. migrateOrdersSchema).
+// Схема v3 (Phase 11, PDR client-sync §5/T-05): серверные поля заявок (updated_seq, assigned_to,
+// scheduled_at, slot_start, slot_end, created_at, updated_at) и синк-поля фото (server_photo_id,
+// sync_status, taken_at) — optional в домене до Phase 12 (пока заявки локальные, эти поля заполнит
+// первый pull). `latitude`/`longitude` — nullable (сервер допускает заявку без геокодированного
+// адреса). Таблицы `sync_outbox`/`sync_state` — только DDL, без CRUD (Phase 12/13). Схема
+// версионируется через `PRAGMA user_version`, миграция — вручную в initDatabase (migrateOrdersSchema).
+// Цепочка миграций схлопнута: установок v1 в природе нет (существующие — v1.3.0 = схема v2), поэтому
+// любой `user_version < 3` ведёт единой миграцией сразу на v3 (без промежуточного v1→v2 шага).
 
 // Версия схемы БД. Поднимать при изменении DDL; миграция выполняется вручную в initDatabase.
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 // Row-интерфейсы: представление строк таблиц (snake_case колонки). Маппятся на домен (camelCase).
-// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts). Серверные поля v3 — nullable
+// в БД (не заполнены до первого pull, Phase 12) — мапперы переводят NULL в отсутствие ключа домена.
 export interface IServiceOrderRow {
   id: string;
   status: string;
@@ -32,8 +37,15 @@ export interface IServiceOrderRow {
   description: string;
   scheduled_time: string;
   scheduled_slot: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
+  updated_seq: number | null;
+  assigned_to: string | null;
+  scheduled_at: string | null;
+  slot_start: string | null;
+  slot_end: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface IServiceOrderPhotoRow {
@@ -42,9 +54,14 @@ export interface IServiceOrderPhotoRow {
   uri: string;
   comment: string | null;
   created_at: string;
+  server_photo_id: string | null;
+  sync_status: string;
+  taken_at: string | null;
 }
 
-// DDL схемы: обе таблицы + внешний ключ фото на заявку. Идемпотентно (IF NOT EXISTS).
+// DDL схемы v3: заявки + фото (внешний ключ фото на заявку) + outbox/kv синка. Идемпотентно
+// (IF NOT EXISTS) — для свежих установок уже создаёт таблицы в v3-виде, для существующих доводит
+// migrateOrdersSchema. `sync_outbox`/`sync_state` — только DDL в этой фазе, без CRUD (Phase 12/13).
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS service_orders (
     id TEXT PRIMARY KEY NOT NULL,
@@ -55,8 +72,15 @@ const SCHEMA_SQL = `
     description TEXT NOT NULL,
     scheduled_time TEXT NOT NULL,
     scheduled_slot TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL
+    latitude REAL,
+    longitude REAL,
+    updated_seq INTEGER,
+    assigned_to TEXT,
+    scheduled_at TEXT,
+    slot_start TEXT,
+    slot_end TEXT,
+    created_at TEXT,
+    updated_at TEXT
   );
   CREATE TABLE IF NOT EXISTS service_order_photos (
     id TEXT PRIMARY KEY NOT NULL,
@@ -64,7 +88,23 @@ const SCHEMA_SQL = `
     uri TEXT NOT NULL,
     comment TEXT,
     created_at TEXT NOT NULL,
+    server_photo_id TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'local',
+    taken_at TEXT,
     FOREIGN KEY(order_id) REFERENCES service_orders(id)
+  );
+  CREATE TABLE IF NOT EXISTS sync_outbox (
+    mutation_id TEXT PRIMARY KEY NOT NULL,
+    type TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    state TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS sync_state (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
   );
 `;
 
@@ -87,13 +127,30 @@ export const toStoredUri = (uri: string): string => {
 export const toRuntimeUri = (stored: string): string =>
   stored.includes('://') ? stored : new File(Paths.document, stored).uri;
 
-// Мапперы (чистые, типизированные): snake_case строка БД ↔ camelCase домен.
+// Невалидный sync_status (повреждённая строка, ручное редактирование БД) не должен ронять рендер —
+// фото остаётся видимым с фоллбэком на Local (тот же паттерн, что resolveOrderStatus ниже, M4).
+const resolvePhotoSyncStatus = (rawStatus: string): PhotoSyncStatusEnum => {
+  if (isPhotoSyncStatus(rawStatus)) {
+    return rawStatus;
+  }
+  logger.warn('[orderDatabaseService.rowToPhoto] Невалидный sync_status фото, фоллбэк на local.', {
+    syncStatus: rawStatus,
+  });
+
+  return PhotoSyncStatusEnum.Local;
+};
+
+// Мапперы (чистые, типизированные): snake_case строка БД ↔ camelCase домен. NULL серверных
+// v3-полей (не заполнены до первого pull, Phase 12) → отсутствие соответствующего ключа домена.
 export const rowToPhoto = (row: IServiceOrderPhotoRow): IServiceOrderPhoto => ({
   id: row.id,
   uri: toRuntimeUri(row.uri),
   // `comment` опционален в домене: NULL из БД → отсутствие ключа.
   ...(row.comment !== null ? { comment: row.comment } : {}),
   createdAt: row.created_at,
+  ...(row.server_photo_id !== null ? { serverPhotoId: row.server_photo_id } : {}),
+  syncStatus: resolvePhotoSyncStatus(row.sync_status),
+  ...(row.taken_at !== null ? { takenAt: row.taken_at } : {}),
 });
 
 // Невалидный статус (повреждённая строка, ручное редактирование БД) не должен ронять рендер списка —
@@ -121,19 +178,13 @@ export const rowToOrder = (row: IServiceOrderRow, photos: IServiceOrderPhoto[]):
   latitude: row.latitude,
   longitude: row.longitude,
   photos,
-});
-
-const orderToRow = (order: IServiceOrder): IServiceOrderRow => ({
-  id: order.id,
-  status: order.status,
-  title: order.title,
-  client: order.client,
-  address: order.address,
-  description: order.description,
-  scheduled_time: order.scheduledTime,
-  scheduled_slot: order.scheduledSlot,
-  latitude: order.latitude,
-  longitude: order.longitude,
+  ...(row.updated_seq !== null ? { updatedSeq: row.updated_seq } : {}),
+  ...(row.assigned_to !== null ? { assignedTo: row.assigned_to } : {}),
+  ...(row.scheduled_at !== null ? { scheduledAt: row.scheduled_at } : {}),
+  ...(row.slot_start !== null ? { slotStart: row.slot_start } : {}),
+  ...(row.slot_end !== null ? { slotEnd: row.slot_end } : {}),
+  ...(row.created_at !== null ? { createdAt: row.created_at } : {}),
+  ...(row.updated_at !== null ? { updatedAt: row.updated_at } : {}),
 });
 
 const photoToRow = (orderId: string, photo: IServiceOrderPhoto): IServiceOrderPhotoRow => ({
@@ -142,30 +193,12 @@ const photoToRow = (orderId: string, photo: IServiceOrderPhoto): IServiceOrderPh
   uri: toStoredUri(photo.uri),
   comment: photo.comment ?? null,
   created_at: photo.createdAt,
+  server_photo_id: photo.serverPhotoId ?? null,
+  sync_status: photo.syncStatus,
+  taken_at: photo.takenAt ?? null,
 });
 
-// Вставка заявки. Параметризованный runAsync с плейсхолдерами — без интерполяции (защита от SQL-инъекции).
-const insertOrder = (database: SQLiteDatabase, order: IServiceOrder): Promise<SQLiteRunResult> => {
-  const row = orderToRow(order);
-
-  return database.runAsync(
-    `INSERT INTO service_orders
-       (id, status, title, client, address, description, scheduled_time, scheduled_slot, latitude, longitude)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    row.id,
-    row.status,
-    row.title,
-    row.client,
-    row.address,
-    row.description,
-    row.scheduled_time,
-    row.scheduled_slot,
-    row.latitude,
-    row.longitude,
-  );
-};
-
-// Вставка фото заявки. Тоже только через плейсхолдеры.
+// Вставка фото заявки. Только через плейсхолдеры (защита от SQL-инъекции).
 const insertPhoto = (
   database: SQLiteDatabase,
   orderId: string,
@@ -174,12 +207,17 @@ const insertPhoto = (
   const row = photoToRow(orderId, photo);
 
   return database.runAsync(
-    'INSERT INTO service_order_photos (id, order_id, uri, comment, created_at) VALUES (?, ?, ?, ?, ?)',
+    `INSERT INTO service_order_photos
+       (id, order_id, uri, comment, created_at, server_photo_id, sync_status, taken_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     row.id,
     row.order_id,
     row.uri,
     row.comment,
     row.created_at,
+    row.server_photo_id,
+    row.sync_status,
+    row.taken_at,
   );
 };
 
@@ -196,65 +234,152 @@ const groupPhotosByOrderId = (rows: IServiceOrderPhotoRow[]): Map<string, IServi
   return grouped;
 };
 
-// Миграция схемы заявок до v2 (Phase 6): добавляет координаты в существующие установки и убирает
-// производный distance_label. Идемпотентна, возобновляема и безопасна для свежих установок —
-// операции применяются только если фактическая схема таблицы этого требует (интроспекция через
-// PRAGMA table_info). Вызывается ИСКЛЮЧИТЕЛЬНО с транзакционным соединением (`txn` из
-// withExclusiveTransactionAsync, см. initDatabase) — kill посреди миграции откатывает ВСЕ операции
-// (ALTER + backfill + PRAGMA user_version) целиком, а не оставляет схему в промежуточном состоянии.
-// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
-export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
-  const columns = await database.getAllAsync<{ name: string }>(
+// Новые nullable-колонки service_orders в v3 (курсор синка, владелец, канонические серверные
+// дата/время — PDR client-sync §5/T-05). ADD COLUMN без NOT NULL: колонка может быть не заполнена
+// до первого pull (Phase 12).
+const V3_ORDER_COLUMNS: { name: string; ddl: string }[] = [
+  { name: 'updated_seq', ddl: 'updated_seq INTEGER' },
+  { name: 'assigned_to', ddl: 'assigned_to TEXT' },
+  { name: 'scheduled_at', ddl: 'scheduled_at TEXT' },
+  { name: 'slot_start', ddl: 'slot_start TEXT' },
+  { name: 'slot_end', ddl: 'slot_end TEXT' },
+  { name: 'created_at', ddl: 'created_at TEXT' },
+  { name: 'updated_at', ddl: 'updated_at TEXT' },
+];
+
+// Новые колонки service_order_photos в v3 (двухфазный фото-синк — PDR client-sync §5/T-11).
+// sync_status — NOT NULL DEFAULT 'local': ADD COLUMN с DEFAULT допустим и в NOT NULL (в отличие
+// от service_orders выше), существующие строки-фото (сняты до Phase 11) получают его безусловно.
+const V3_PHOTO_COLUMNS: { name: string; ddl: string }[] = [
+  { name: 'server_photo_id', ddl: 'server_photo_id TEXT' },
+  { name: 'sync_status', ddl: "sync_status TEXT NOT NULL DEFAULT 'local'" },
+  { name: 'taken_at', ddl: 'taken_at TEXT' },
+];
+
+// Добавляет колонку в таблицу, только если её ещё нет (интроспекция снаружи, см. table_info) —
+// прерванный прошлый прогон мог успеть добавить часть колонок.
+const addColumnIfMissing = async (
+  database: SQLiteDatabase,
+  table: string,
+  existingColumns: Set<string>,
+  column: { name: string; ddl: string },
+): Promise<void> => {
+  if (existingColumns.has(column.name)) {
+    return;
+  }
+  logger.debug(`[orderDatabaseService.migrateOrdersSchema] Добавляю колонку ${column.name}.`);
+  await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column.ddl};`);
+};
+
+// latitude остаётся NOT NULL, только если таблица ещё не мигрирована на v3 — skip-условие
+// идемпотентности: свежие установки (CREATE уже nullable) и уже смигрированные существующие
+// безопасно пропускают дорогой table rebuild ниже.
+const isLatitudeNotNull = async (database: SQLiteDatabase): Promise<boolean> => {
+  const columns = await database.getAllAsync<{ name: string; notnull: number }>(
     'PRAGMA table_info(service_orders);',
   );
-  const columnNames = new Set(columns.map((column) => column.name));
 
-  // v1 → v2: координаты. Каждая колонка проверяется и добавляется независимо — прерванный прошлый
-  // прогон мог успеть добавить latitude, но не longitude (или наоборот). ADD COLUMN — nullable
-  // (SQLite запрещает ADD COLUMN NOT NULL к непустой таблице без DEFAULT); NOT NULL остаётся только
-  // в CREATE для свежих установок.
-  if (!columnNames.has('latitude')) {
-    logger.debug('[orderDatabaseService.migrateOrdersSchema] Добавляю колонку latitude.');
-    await database.execAsync('ALTER TABLE service_orders ADD COLUMN latitude REAL;');
-  }
+  return columns.find((column) => column.name === 'latitude')?.notnull === 1;
+};
 
-  if (!columnNames.has('longitude')) {
-    logger.debug('[orderDatabaseService.migrateOrdersSchema] Добавляю колонку longitude.');
-    await database.execAsync('ALTER TABLE service_orders ADD COLUMN longitude REAL;');
-  }
+// Снимает NOT NULL с latitude/longitude через 12-step table rebuild (SQLite не умеет ALTER COLUMN
+// DROP NOT NULL): новая таблица по v3-DDL → перенос данных → удаление старой → переименование.
+// К моменту вызова service_orders уже содержит все v3-колонки (addColumnIfMissing выше отработал
+// первым), поэтому SELECT явным списком переносит их без потерь. FK service_order_photos.order_id
+// разрешается по ИМЕНИ таблицы в рантайме — после RENAME обратно в service_orders ссылка остаётся
+// рабочей без изменений в самой service_order_photos.
+const dropCoordinatesNotNull = async (database: SQLiteDatabase): Promise<void> => {
+  logger.debug(
+    '[orderDatabaseService.migrateOrdersSchema] Снимаю NOT NULL с latitude/longitude (table rebuild).',
+  );
+  const columns = [
+    'id',
+    'status',
+    'title',
+    'client',
+    'address',
+    'description',
+    'scheduled_time',
+    'scheduled_slot',
+    'latitude',
+    'longitude',
+    'updated_seq',
+    'assigned_to',
+    'scheduled_at',
+    'slot_start',
+    'slot_end',
+    'created_at',
+    'updated_at',
+  ].join(', ');
 
-  // Backfill по id из сид-данных выполняется безусловно (не только когда ALTER только что отработал):
-  // единственные заявки в legacy-БД — сид order-1..6 (формы создания заявок ещё нет), и первые 6
-  // локаций генератора mock.ts закреплены именно за этими id; UPDATE по остальным id сида — no-op
-  // (строк нет). Условие latitude IS NULL в самом запросе делает его no-op и для уже заполненных
-  // строк — повторный прогон после прерванной миграции безопасен.
-  for (const order of MOCK_SERVICE_ORDERS) {
-    const result = await database.runAsync(
-      'UPDATE service_orders SET latitude = ?, longitude = ? WHERE id = ? AND latitude IS NULL',
-      order.latitude,
-      order.longitude,
-      order.id,
+  await database.execAsync(`
+    CREATE TABLE service_orders_new (
+      id TEXT PRIMARY KEY NOT NULL,
+      status TEXT NOT NULL,
+      title TEXT NOT NULL,
+      client TEXT NOT NULL,
+      address TEXT NOT NULL,
+      description TEXT NOT NULL,
+      scheduled_time TEXT NOT NULL,
+      scheduled_slot TEXT NOT NULL,
+      latitude REAL,
+      longitude REAL,
+      updated_seq INTEGER,
+      assigned_to TEXT,
+      scheduled_at TEXT,
+      slot_start TEXT,
+      slot_end TEXT,
+      created_at TEXT,
+      updated_at TEXT
     );
-    logger.debug(
-      `[orderDatabaseService.migrateOrdersSchema] Backfill ${order.id}: изменено строк ${result.changes}.`,
-    );
+    INSERT INTO service_orders_new (${columns}) SELECT ${columns} FROM service_orders;
+    DROP TABLE service_orders;
+    ALTER TABLE service_orders_new RENAME TO service_orders;
+  `);
+  logger.debug('[orderDatabaseService.migrateOrdersSchema] Table rebuild завершён.');
+};
+
+// Миграция схемы на v3 (Phase 11, PDR client-sync §5/T-05): серверные поля заявок и фото, снятие
+// NOT NULL с координат. Цепочка миграций схлопнута (см. комментарий у DATABASE_VERSION выше) —
+// любой `user_version < 3` ведёт прямо сюда, промежуточного v1→v2 шага больше нет. Идемпотентна,
+// возобновляема и безопасна для свежих установок — каждая операция проверяет фактическую схему
+// (интроспекция через PRAGMA table_info) перед изменением. Вызывается ИСКЛЮЧИТЕЛЬНО с транзакционным
+// соединением (`txn` из withExclusiveTransactionAsync, см. initDatabase) — kill посреди миграции
+// откатывает ВСЕ операции целиком, а не оставляет схему в промежуточном состоянии.
+// export — для unit-теста (см. __tests__/orderDatabaseService.test.ts).
+export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<void> => {
+  const orderColumns = await database.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(service_orders);',
+  );
+  const orderColumnNames = new Set(orderColumns.map((column) => column.name));
+
+  for (const column of V3_ORDER_COLUMNS) {
+    await addColumnIfMissing(database, 'service_orders', orderColumnNames, column);
   }
 
-  // Убираем производную колонку (PDR §13: производное не храним). DROP COLUMN — SQLite 3.35+ (Expo);
-  // FK фото ссылается на id, поэтому снимки не затрагиваются.
-  if (columnNames.has('distance_label')) {
-    logger.debug('[orderDatabaseService.migrateOrdersSchema] Удаляю колонку distance_label.');
-    await database.execAsync('ALTER TABLE service_orders DROP COLUMN distance_label;');
+  // Rebuild — ПОСЛЕ добавления новых колонок выше: явный SELECT-список dropCoordinatesNotNull
+  // ссылается на них, они обязаны уже существовать в старой таблице.
+  if (await isLatitudeNotNull(database)) {
+    await dropCoordinatesNotNull(database);
+  }
+
+  const photoColumns = await database.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(service_order_photos);',
+  );
+  const photoColumnNames = new Set(photoColumns.map((column) => column.name));
+
+  for (const column of V3_PHOTO_COLUMNS) {
+    await addColumnIfMissing(database, 'service_order_photos', photoColumnNames, column);
   }
 };
 
 export const orderDatabaseService = {
   // Создаёт схему, включает foreign keys и применяет миграции по PRAGMA user_version.
   // DDL/PRAGMA создания схемы — через execAsync (bulk, без параметров); CREATE IF NOT EXISTS для
-  // свежих установок создаёт таблицы уже с координатами, для существующих — no-op (доводит
+  // свежих установок создаёт таблицы уже в v3-виде, для существующих — no-op (доводит
   // migrateOrdersSchema). Сама миграция выполняется в withExclusiveTransactionAsync на отдельном
-  // соединении: ALTER-ы, backfill и PRAGMA user_version атомарны — kill в любой момент либо
-  // откатывает всё, либо (после коммита) оставляет схему полностью на v2, промежуточных состояний
+  // соединении: ALTER-ы, table rebuild и PRAGMA user_version атомарны — kill в любой момент либо
+  // откатывает всё, либо (после коммита) оставляет схему полностью на v3, промежуточных состояний
   // между прогонами initDatabase быть не может.
   async initDatabase(): Promise<void> {
     // Ошибку не ловим: пробрасываем вызывающему (useOrdersStore), который ставит store.error и
@@ -284,37 +409,6 @@ export const orderDatabaseService = {
     }
 
     logger.info('[orderDatabaseService.initDatabase] БД инициализирована.');
-  },
-
-  // Идемпотентный сид: наполняет БД из MOCK_SERVICE_ORDERS только когда таблица пуста.
-  async seedDatabaseIfNeeded(): Promise<void> {
-    const database = await getDatabase();
-    const countRow = await database.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) AS count FROM service_orders',
-    );
-
-    if ((countRow?.count ?? 0) > 0) {
-      logger.info('[orderDatabaseService.seedDatabaseIfNeeded] Сид пропущен (данные есть).');
-
-      return;
-    }
-
-    // Вся партия сида — в withExclusiveTransactionAsync: только эксклюзивная транзакция
-    // гарантирует атомарность (обычная withTransactionAsync не изолирует конкурентные запросы
-    // того же соединения, см. комментарий getOrders).
-    await database.withExclusiveTransactionAsync(async (txn) => {
-      for (const order of MOCK_SERVICE_ORDERS) {
-        await insertOrder(txn, order);
-
-        for (const photo of order.photos) {
-          await insertPhoto(txn, order.id, photo);
-        }
-      }
-    });
-
-    logger.info(
-      `[orderDatabaseService.seedDatabaseIfNeeded] Сид выполнен (${MOCK_SERVICE_ORDERS.length}).`,
-    );
   },
 
   // Возвращает все заявки с прикреплёнными фото (группировка фото по order_id в JS). Оба SELECT —
