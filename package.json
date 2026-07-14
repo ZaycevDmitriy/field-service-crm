@@ -13,8 +13,8 @@
     "format:check": "prettier --check src",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run format:check",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "TZ=UTC jest",
+    "test:watch": "TZ=UTC jest --watch"
   },
   "jest": {
     "preset": "jest-expo",
