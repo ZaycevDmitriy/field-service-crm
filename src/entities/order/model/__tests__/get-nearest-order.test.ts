@@ -80,4 +80,31 @@ describe('getNearestOrder', () => {
     ];
     expect(getNearestOrder(orders, userCoords)?.id).toBe('active-far');
   });
+
+  it('с локацией исключает заявки без координат из геодистанционного ранжирования (Phase 11)', () => {
+    const userCoords = { latitude: 55.0, longitude: 37.0 };
+    const orders = [
+      // Ближе всего по прямой (дистанция 0), но без координат — участвовать в ранжировании не может.
+      makeOrder({ id: 'no-coords', latitude: null, longitude: null }),
+      makeOrder({ id: 'with-coords', latitude: 55.5, longitude: 37.5 }),
+    ];
+    expect(getNearestOrder(orders, userCoords)?.id).toBe('with-coords');
+  });
+
+  it('с локацией: если ни у одной активной заявки нет координат — fallback на время визита', () => {
+    const userCoords = { latitude: 55.0, longitude: 37.0 };
+    const orders = [
+      makeOrder({ id: 'late', scheduledTime: '15:30', latitude: null, longitude: null }),
+      makeOrder({ id: 'early', scheduledTime: '08:15', latitude: null, longitude: null }),
+    ];
+    expect(getNearestOrder(orders, userCoords)?.id).toBe('early');
+  });
+
+  it('без локации заявка без координат остаётся кандидатом по времени визита (координаты не нужны)', () => {
+    const orders = [
+      makeOrder({ id: 'late', scheduledTime: '15:30', latitude: 55.75, longitude: 37.61 }),
+      makeOrder({ id: 'early', scheduledTime: '08:15', latitude: null, longitude: null }),
+    ];
+    expect(getNearestOrder(orders)?.id).toBe('early');
+  });
 });

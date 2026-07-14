@@ -1,5 +1,6 @@
 import { orderDatabaseService } from '../../api';
 import { ServiceOrderStatusEnum } from '../order-status';
+import { PhotoSyncStatusEnum } from '../photo-sync-status';
 import type { IServiceOrder } from '../types';
 import { useOrdersStore } from '../use-orders-store';
 
@@ -11,7 +12,6 @@ import { ToastVariantEnum, useToastStore } from '@/shared/model';
 jest.mock('../../api', () => ({
   orderDatabaseService: {
     initDatabase: jest.fn(),
-    seedDatabaseIfNeeded: jest.fn(),
     getOrders: jest.fn(),
     updateOrderStatus: jest.fn(),
     addOrderPhoto: jest.fn(),
@@ -294,6 +294,7 @@ describe('useOrdersStore', () => {
       uri: PHOTO_URI,
       comment: 'Готово',
       createdAt: '2026-07-05T10:00:00.000Z',
+      syncStatus: PhotoSyncStatusEnum.Local,
     };
     const makeOrderWithPhoto = (
       status: ServiceOrderStatusEnum = ServiceOrderStatusEnum.InProgress,
@@ -421,6 +422,50 @@ describe('useOrdersStore', () => {
     });
   });
 
+  describe('initialize', () => {
+    // Клиентский сид демо-данных удалён (Phase 11, решение Q-04) — БД пуста до первого pull
+    // (Phase 12); пустой список без ошибки — валидное состояние (EmptyState экранов).
+    it('на пустой БД гидрирует пустой список заявок без ошибки', async () => {
+      mockedService.initDatabase.mockResolvedValue(undefined);
+      mockedService.getOrders.mockResolvedValue([]);
+
+      await useOrdersStore.getState().initialize();
+
+      expect(useOrdersStore.getState().orders).toEqual([]);
+      expect(useOrdersStore.getState().error).toBeNull();
+      expect(useOrdersStore.getState().loading).toBe(false);
+    });
+
+    it('не запускается повторно, пока идёт предыдущий вызов (guard по loading)', async () => {
+      let resolveInit: () => void = () => undefined;
+      mockedService.initDatabase.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveInit = resolve;
+          }),
+      );
+      mockedService.getOrders.mockResolvedValue([]);
+
+      const first = useOrdersStore.getState().initialize();
+      const second = useOrdersStore.getState().initialize();
+
+      resolveInit();
+      await Promise.all([first, second]);
+
+      expect(mockedService.initDatabase).toHaveBeenCalledTimes(1);
+    });
+
+    it('ошибка initDatabase → store.error выставлен, список остаётся пустым', async () => {
+      mockedService.initDatabase.mockRejectedValue(new Error('db fail'));
+
+      await useOrdersStore.getState().initialize();
+
+      expect(useOrdersStore.getState().orders).toEqual([]);
+      expect(useOrdersStore.getState().error).toBe('Не удалось загрузить заявки');
+      expect(mockedService.getOrders).not.toHaveBeenCalled();
+    });
+  });
+
   // L3: под STRESS_TEST стор наполнен синтетикой мимо БД — все точки, которые обычно персистят/читают
   // через orderDatabaseService, должны быть no-op по отношению к БД (мок модуля ./stress).
   describe('STRESS_TEST guard (L3)', () => {
@@ -446,7 +491,6 @@ describe('useOrdersStore', () => {
       await stressStore.getState().initialize();
       expect(stressStore.getState().orders).toHaveLength(3);
       expect(stressService.initDatabase).not.toHaveBeenCalled();
-      expect(stressService.seedDatabaseIfNeeded).not.toHaveBeenCalled();
 
       stressStore.getState().startWork('stress-0');
       expect(stressStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
