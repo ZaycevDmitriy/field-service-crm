@@ -90,6 +90,8 @@ export const LoginPage: FC = () => {
             placeholder="you@onsite.dev"
             editable={!loading}
             returnKeyType="next"
+            testID="login-email-input"
+            accessibilityLabel="Email, поле ввода"
           />
         </View>
 
@@ -105,6 +107,8 @@ export const LoginPage: FC = () => {
             editable={!loading}
             returnKeyType="done"
             onSubmitEditing={() => void handleSubmit()}
+            testID="login-password-input"
+            accessibilityLabel="Пароль, поле ввода"
           />
         </View>
 
@@ -122,6 +126,7 @@ export const LoginPage: FC = () => {
           loading={loading}
           disabled={!canSubmit}
           onPress={() => void handleSubmit()}
+          testID="login-submit-button"
         />
       </View>
     </KeyboardAwareScrollView>
