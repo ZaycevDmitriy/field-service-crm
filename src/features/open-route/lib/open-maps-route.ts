@@ -16,7 +16,10 @@ const YANDEX_APP_SCHEME = 'yandexmaps://';
 // Собирает rtext Яндекса: «origin~destination», либо «~destination» при отсутствии локации —
 // тогда Яндекс строит маршрут от текущего положения сам (кнопка работает даже без разрешения, §21 acc.3).
 // Координаты — числа, поэтому raw без URL-кодирования (формат Яндекса: lat,lon~lat,lon).
-const buildRtext = (destination: IRouteDestination, origin: IRouteDestination | null): string => {
+export const buildRtext = (
+  destination: IRouteDestination,
+  origin: IRouteDestination | null,
+): string => {
   const dest = `${destination.latitude},${destination.longitude}`;
 
   return origin ? `${origin.latitude},${origin.longitude}~${dest}` : `~${dest}`;
