@@ -232,6 +232,78 @@ describe('useOrdersStore', () => {
     });
   });
 
+  describe('сериализация записи статуса (H1)', () => {
+    // Цепочка сериализации проходит через .then/.catch/.finally — каждый добавляет по микротику;
+    // фиксированное число `.then()` (как в остальных тестах файла) для такой цепочки хрупко, поэтому
+    // здесь — цикл с запасом.
+    const flushMicrotasks = async (ticks = 10) => {
+      for (let i = 0; i < ticks; i += 1) {
+        await Promise.resolve();
+      }
+    };
+
+    it('completeWork не стартует запись в БД, пока не завершится запись startWork', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+      let resolveFirstWrite: () => void = () => undefined;
+      mockedService.updateOrderStatus.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstWrite = resolve;
+          }),
+      );
+
+      useOrdersStore.getState().startWork('order-1');
+      useOrdersStore.getState().completeWork('order-1');
+
+      // Оптимистичный UI отработал синхронно (guard completeWork видит уже InProgress).
+      expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.Done);
+      // Пока первая запись не резолвилась, вторая не должна была стартовать.
+      await flushMicrotasks();
+      expect(mockedService.updateOrderStatus).toHaveBeenCalledTimes(1);
+
+      resolveFirstWrite();
+      await flushMicrotasks();
+
+      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+        1,
+        'order-1',
+        ServiceOrderStatusEnum.InProgress,
+      );
+      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+        2,
+        'order-1',
+        ServiceOrderStatusEnum.Done,
+      );
+    });
+
+    it('отказ первой записи не блокирует следующее звено — вторая запись стартует, показан error-тост', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+      // Первое звено (startWork → InProgress) реджектит, второе (completeWork → Done) — успешно.
+      mockedService.updateOrderStatus
+        .mockRejectedValueOnce(new Error('disk full'))
+        .mockResolvedValueOnce(undefined);
+
+      useOrdersStore.getState().startWork('order-1');
+      useOrdersStore.getState().completeWork('order-1');
+
+      await flushMicrotasks();
+
+      // Отказ звена не оборвал цепочку: вторая запись всё равно ушла в БД.
+      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+        1,
+        'order-1',
+        ServiceOrderStatusEnum.InProgress,
+      );
+      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+        2,
+        'order-1',
+        ServiceOrderStatusEnum.Done,
+      );
+      // Об отказе персиста пользователю сообщил error-тост.
+      expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
+    });
+  });
+
   describe('addOrderPhoto', () => {
     // Фото редактируются только у заявки в работе — фикстуры по умолчанию InProgress.
     const makeInProgressOrder = () => makeOrder({ status: ServiceOrderStatusEnum.InProgress });

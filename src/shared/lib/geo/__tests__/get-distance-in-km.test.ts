@@ -41,9 +41,16 @@ describe('formatDistanceLabel', () => {
   it.each([
     { distanceKm: 0, expected: '0 м' },
     { distanceKm: 0.35, expected: '350 м' },
+    { distanceKm: 0.994, expected: '990 м' },
     { distanceKm: 4.234, expected: '4.2 км' },
     { distanceKm: 11, expected: '11.0 км' },
   ])('форматирует $distanceKm км → "$expected"', ({ distanceKm, expected }) => {
     expect(formatDistanceLabel(distanceKm)).toBe(expected);
+  });
+
+  it('округление до 1000 м на границе 1 км переходит в "1.0 км", а не "1000 м"', () => {
+    // 0.9996 км округляется до 10 м как 1000 м, но ветка «км» по условию distanceKm < 1 не
+    // срабатывает — без фикса функция вернула бы «1000 м».
+    expect(formatDistanceLabel(0.9996)).toBe('1.0 км');
   });
 });

@@ -91,10 +91,20 @@ const transitionStatus = (
     order.id === orderId && order.status === from ? { ...order, status: to } : order,
   );
 
+// Хвост цепочки сериализации записей статуса (H1): без неё параллельные persistStatus (напр.
+// startWork сразу за completeWork) уходят в БД одновременно — expo-sqlite де-факто исполняет
+// запросы одного соединения последовательно, но структурной гарантии порядка в коде не было.
+// `null` — цепочка простаивает: следующая запись стартует синхронно (тот же тайминг, что раньше),
+// а не ждёт лишний тик. Модульный синглтон — один на все заявки, не per-order: записи статусов
+// частые, но не настолько, чтобы одна заявка обязана была блокировать запись по другой.
+let statusWriteChain: Promise<void> | null = null;
+
 // Fire-and-forget персист статуса: не блокирует оптимистичный UI. При отклонении — откат
 // оптимистичного перехода (`to` → `from`) через тот же guard-переход. Откат сработает, только если
 // статус всё ещё `to`: если пользователь успел сделать следующий переход до этого отклонения, откат
-// не применяется — осознанный компромисс (не затираем более новое состояние).
+// не применяется — осознанный компромисс (не затираем более новое состояние). Запись сериализована
+// относительно других persistStatus-вызовов (см. statusWriteChain) — ошибка одного звена не должна
+// блокировать следующую запись.
 const persistStatus = (
   set: (updater: (state: IOrdersStore) => Partial<IOrdersStore>) => void,
   orderId: string,
@@ -112,17 +122,35 @@ const persistStatus = (
 
     return;
   }
-  // Промис намеренно не ожидается (оптимистичный UI); rejection обработан здесь же через .catch.
-  orderDatabaseService
-    .updateOrderStatus(orderId, to)
-    // Побочные эффекты закрытия заявки (отмена напоминания) — только после успешного персиста:
-    // при откате статуса заявка снова активна, и напоминание должно остаться.
-    .then(() => onPersisted?.())
-    .catch((error) => {
-      logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
-      useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
-      set((state) => ({ orders: transitionStatus(state.orders, orderId, to, from) }));
-    });
+  // Слот освобождается сразу по завершении звена (успех или отказ) — следующий независимый
+  // persistStatus снова стартует синхронно, а не ждёт лишний тик. Освобождаем только свой слот
+  // (сверка по ссылке): если за время записи в цепочку уже встал более новый вызов, его хвост
+  // трогать нельзя.
+  const markIdle = (): void => {
+    if (statusWriteChain === chained) {
+      statusWriteChain = null;
+    }
+  };
+  // Само звено записи — промис намеренно не ожидается вызывающим кодом (оптимистичный UI);
+  // rejection обработан здесь же (второй колбэк .then), чтобы ошибка не прерывала цепочку.
+  const writeStatus = (): Promise<void> =>
+    orderDatabaseService.updateOrderStatus(orderId, to).then(
+      // Побочные эффекты закрытия заявки (отмена напоминания) — только после успешного персиста:
+      // при откате статуса заявка снова активна, и напоминание должно остаться.
+      () => {
+        onPersisted?.();
+        markIdle();
+      },
+      (error) => {
+        logger.error(`[useOrdersStore.${action}] Не удалось персистить статус.`, error);
+        useToastStore.getState().showToast(ToastVariantEnum.Error, 'Статус не сохранён');
+        set((state) => ({ orders: transitionStatus(state.orders, orderId, to, from) }));
+        markIdle();
+      },
+    );
+
+  const chained = statusWriteChain ? statusWriteChain.then(writeStatus) : writeStatus();
+  statusWriteChain = chained;
 };
 
 export const useOrdersStore = create<IOrdersStore>()((set, get) => ({

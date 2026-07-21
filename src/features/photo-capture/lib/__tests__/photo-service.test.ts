@@ -159,4 +159,25 @@ describe('persistPhoto (L8)', () => {
     expect(result).toBe(PERSISTED_URI);
     expect(mockedDeleteFile).toHaveBeenCalledWith(TEMP_URI);
   });
+
+  // getExtension — приватная функция (не экспортируется), покрывается через persistPhoto.
+  it.each([
+    { uri: 'file:///cache/photo', expectedExt: 'jpg', label: 'без расширения' },
+    {
+      uri: 'file:///a.b/photo',
+      expectedExt: 'jpg',
+      label: 'точка до последнего слэша (в каталоге)',
+    },
+    { uri: 'file:///x/photo.', expectedExt: 'jpg', label: 'завершающая точка' },
+    { uri: 'file:///cache/photo.JPG', expectedExt: 'jpg', label: 'апперкейс нормализуется' },
+    {
+      uri: 'file:///cache/photo.png',
+      expectedExt: 'png',
+      label: 'реальное расширение сохраняется',
+    },
+  ])('getExtension: $label → .$expectedExt', async ({ uri, expectedExt }) => {
+    const result = await photoService.persistPhoto(uri);
+
+    expect(result).toBe(`file:///mock-document/photos/mock-id.${expectedExt}`);
+  });
 });
