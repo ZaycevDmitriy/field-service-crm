@@ -27,8 +27,14 @@ export type IPullOrderFields = Omit<IServiceOrder, 'photos'> &
  * пропускается (skip), а не заменяется фоллбэком — в отличие от локальной БД (resolveOrderStatus
  * в order-database-service), здесь это сигнал реального расхождения с сервером, не повреждённая
  * локальная строка.
+ *
+ * Параметр — Omit<IPullOrderPayload, 'photos'>: переиспользуется и для конфликтного снимка
+ * push-контракта (IConflictOrderSnapshot, Phase 13), который photos не несёт вовсе. Тело маппера
+ * это поле не читает — сужение типа не требует изменений ниже.
  */
-export const pullItemToOrder = (payload: IPullOrderPayload): IPullOrderFields | null => {
+export const pullItemToOrder = (
+  payload: Omit<IPullOrderPayload, 'photos'>,
+): IPullOrderFields | null => {
   if (!isServiceOrderStatus(payload.status)) {
     logger.warn('[pullItemToOrder] Невалидный статус заявки в pull-элементе, элемент пропущен.', {
       orderId: payload.id,
