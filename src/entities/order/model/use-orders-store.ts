@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { orderDatabaseService, pullOrders, SyncStateKeyEnum } from '../api';
+import { orderDatabaseService, requestSync, syncCycle, SyncStateKeyEnum } from '../api';
 
 import { OrderFilterEnum } from './order-filter';
 import { ServiceOrderStatusEnum } from './order-status';
@@ -28,8 +28,9 @@ export interface IOrdersStore {
   initialize: () => Promise<void>;
   // Гидрация: грузит заявки из SQLite. Идемпотентна по флагу loading (нужна для pull-to-refresh).
   loadOrders: () => Promise<void>;
-  // Курсорный pull заявок с сервера (PDR client-sync §5, T-07): гидрирует стор из БД после
-  // применения. Ошибка не стирает локальные данные (офлайн — норма, PDR) — только лог + тост.
+  // Полный цикл синхронизации (push outbox-мутаций, затем pull, PDR client-sync §5/§8, T-07…T-10):
+  // гидрирует стор из БД после применения. Ошибка не стирает локальные данные (офлайн — норма,
+  // PDR) — только лог + тост.
   syncOrders: () => Promise<void>;
   // Bootstrap синка при логине/смене пользователя: если userId отличается от последнего
   // sync.lastUserId — локальные данные (заявки, фото, напоминания) очищаются перед pull с нулевого
@@ -134,11 +135,19 @@ const persistStatus = (
   // Само звено записи — промис намеренно не ожидается вызывающим кодом (оптимистичный UI);
   // rejection обработан здесь же (второй колбэк .then), чтобы ошибка не прерывала цепочку.
   const writeStatus = (): Promise<void> =>
-    orderDatabaseService.updateOrderStatus(orderId, to).then(
+    orderDatabaseService.enqueueStatusChange(orderId, from, to).then(
       // Побочные эффекты закрытия заявки (отмена напоминания) — только после успешного персиста:
-      // при откате статуса заявка снова активна, и напоминание должно остаться.
-      () => {
+      // при откате статуса заявка снова активна, и напоминание должно остаться. Пинок оркестратора
+      // (fire-and-forget, T4) — сразу после успешной записи в очередь; ошибка пинка не влияет на UI
+      // (мутация уже в outbox — доедет по следующему триггеру).
+      (mutationId) => {
+        logger.debug(`[useOrdersStore.${action}] Мутация поставлена в очередь.`, {
+          orderId,
+          to,
+          mutationId,
+        });
         onPersisted?.();
+        void requestSync();
         markIdle();
       },
       (error) => {
@@ -239,7 +248,7 @@ export const useOrdersStore = create<IOrdersStore>()((set, get) => ({
     }
     set({ syncing: true });
     try {
-      await pullOrders();
+      await syncCycle();
       set({ orders: await orderDatabaseService.getOrders(), error: null });
     } catch (error) {
       // Ошибка синка НЕ стирает локальные данные (офлайн — норма, PDR): orders/error не трогаем,
