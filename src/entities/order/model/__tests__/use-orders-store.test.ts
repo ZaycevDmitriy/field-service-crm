@@ -1,4 +1,4 @@
-import { orderDatabaseService, pullOrders, SyncStateKeyEnum } from '../../api';
+import { orderDatabaseService, requestSync, syncCycle, SyncStateKeyEnum } from '../../api';
 import { ServiceOrderStatusEnum } from '../order-status';
 import { PhotoSyncStatusEnum } from '../photo-sync-status';
 import type { IServiceOrder } from '../types';
@@ -8,19 +8,21 @@ import { cancelAllReminders, cancelOrderRemindersByKey } from '@/shared/lib/noti
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 
 // Изолируем стор от SQLite: orderDatabaseService — единственная сторонняя зависимость guard-ов
-// и переходов статуса, которые тестируются здесь.
+// и переходов статуса, которые тестируются здесь. requestSync/syncCycle (Phase 13) — оркестратор
+// и push+pull-цикл, тоже мокаются (юнит-тесты этого стора не должны знать про сеть/outbox-детали).
 jest.mock('../../api', () => ({
   orderDatabaseService: {
     initDatabase: jest.fn(),
     getOrders: jest.fn(),
-    updateOrderStatus: jest.fn(),
+    enqueueStatusChange: jest.fn(),
     addOrderPhoto: jest.fn(),
     deleteOrderPhoto: jest.fn(),
     clearDatabase: jest.fn(),
     getSyncStateValue: jest.fn(),
     setSyncStateValue: jest.fn(),
   },
-  pullOrders: jest.fn(),
+  requestSync: jest.fn(),
+  syncCycle: jest.fn(),
   SyncStateKeyEnum: { Cursor: 'sync.cursor', LastUserId: 'sync.lastUserId' },
 }));
 
@@ -34,7 +36,8 @@ jest.mock('@/shared/lib/notifications', () => ({
 const mockedService = orderDatabaseService as jest.Mocked<typeof orderDatabaseService>;
 const mockedCancelReminders = cancelOrderRemindersByKey as jest.Mock;
 const mockedCancelAllReminders = cancelAllReminders as jest.Mock;
-const mockedPullOrders = pullOrders as jest.Mock;
+const mockedRequestSync = requestSync as jest.Mock;
+const mockedSyncCycle = syncCycle as jest.Mock;
 
 // URI снимка для тестов фотоотчёта (общий для addOrderPhoto/removeOrderPhoto/STRESS_TEST).
 const PHOTO_URI = 'file://photo.jpg';
@@ -59,14 +62,19 @@ const makeOrder = (overrides: Partial<IServiceOrder> = {}): IServiceOrder => ({
 const resetStore = (orders: IServiceOrder[] = []) =>
   useOrdersStore.setState({ orders, loading: false, syncing: false, error: null });
 
+// mutationId-заглушка для успешных enqueueStatusChange — реальное значение проверяется юнит-тестами
+// order-database-service (createId — UUID-мок), здесь важен только факт возврата строки.
+const MUTATION_ID = 'mutation-1';
+
 describe('useOrdersStore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedService.updateOrderStatus.mockResolvedValue(undefined);
+    mockedService.enqueueStatusChange.mockResolvedValue(MUTATION_ID);
     mockedService.addOrderPhoto.mockResolvedValue(undefined);
     mockedService.deleteOrderPhoto.mockResolvedValue(undefined);
     mockedService.getSyncStateValue.mockResolvedValue(null);
-    mockedPullOrders.mockResolvedValue(undefined);
+    mockedSyncCycle.mockResolvedValue(undefined);
+    mockedRequestSync.mockResolvedValue(undefined);
     resetStore();
     useToastStore.setState({ toasts: [] });
   });
@@ -78,10 +86,30 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().startWork('order-1');
 
       expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
-      expect(mockedService.updateOrderStatus).toHaveBeenCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenCalledWith(
         'order-1',
+        ServiceOrderStatusEnum.New,
         ServiceOrderStatusEnum.InProgress,
       );
+    });
+
+    it('пинает requestSync после успешной записи в очередь (T3)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+
+      useOrdersStore.getState().startWork('order-1');
+      await Promise.resolve().then().then().then();
+
+      expect(mockedRequestSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('не пинает requestSync при отклонении записи (мутация не встала в очередь)', async () => {
+      resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
+      mockedService.enqueueStatusChange.mockRejectedValueOnce(new Error('db fail'));
+
+      useOrdersStore.getState().startWork('order-1');
+      await Promise.resolve().then().then().then();
+
+      expect(mockedRequestSync).not.toHaveBeenCalled();
     });
 
     it('no-op, если заявка не найдена', () => {
@@ -90,12 +118,12 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().startWork('missing');
 
       expect(useOrdersStore.getState().orders).toHaveLength(0);
-      expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
+      expect(mockedService.enqueueStatusChange).not.toHaveBeenCalled();
     });
 
     it('откатывает статус к исходному при отклонении персиста и показывает тост (M1)', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
-      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+      mockedService.enqueueStatusChange.mockRejectedValueOnce(new Error('db fail'));
 
       useOrdersStore.getState().startWork('order-1');
       expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
@@ -108,7 +136,7 @@ describe('useOrdersStore', () => {
 
     it('не откатывает статус, если до отклонения уже произошёл следующий переход (гонка)', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
-      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+      mockedService.enqueueStatusChange.mockRejectedValueOnce(new Error('db fail'));
 
       useOrdersStore.getState().startWork('order-1');
       // Пользователь успел перевести заявку дальше до того, как reject startWork долетел.
@@ -129,7 +157,7 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().startWork('order-1');
 
       expect(useOrdersStore.getState().orders[0].status).toBe(status);
-      expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
+      expect(mockedService.enqueueStatusChange).not.toHaveBeenCalled();
     });
   });
 
@@ -140,8 +168,9 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().completeWork('order-1');
 
       expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.Done);
-      expect(mockedService.updateOrderStatus).toHaveBeenCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenCalledWith(
         'order-1',
+        ServiceOrderStatusEnum.InProgress,
         ServiceOrderStatusEnum.Done,
       );
     });
@@ -156,7 +185,7 @@ describe('useOrdersStore', () => {
       useOrdersStore.getState().completeWork('order-1');
 
       expect(useOrdersStore.getState().orders[0].status).toBe(status);
-      expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
+      expect(mockedService.enqueueStatusChange).not.toHaveBeenCalled();
     });
 
     it('отменяет напоминание по заявке после успешного персиста перехода (M6)', async () => {
@@ -171,7 +200,7 @@ describe('useOrdersStore', () => {
 
     it('не отменяет напоминание при отклонении персиста — статус откатывается, заявка снова активна', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.InProgress })]);
-      mockedService.updateOrderStatus.mockRejectedValueOnce(new Error('db fail'));
+      mockedService.enqueueStatusChange.mockRejectedValueOnce(new Error('db fail'));
 
       useOrdersStore.getState().completeWork('order-1');
 
@@ -209,7 +238,7 @@ describe('useOrdersStore', () => {
         useOrdersStore.getState().cancelOrder('order-1');
 
         expect(useOrdersStore.getState().orders[0].status).toBe(status);
-        expect(mockedService.updateOrderStatus).not.toHaveBeenCalled();
+        expect(mockedService.enqueueStatusChange).not.toHaveBeenCalled();
       },
     );
 
@@ -244,10 +273,10 @@ describe('useOrdersStore', () => {
 
     it('completeWork не стартует запись в БД, пока не завершится запись startWork', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
-      let resolveFirstWrite: () => void = () => undefined;
-      mockedService.updateOrderStatus.mockImplementationOnce(
+      let resolveFirstWrite: (mutationId: string) => void = (_mutationId) => undefined;
+      mockedService.enqueueStatusChange.mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
+          new Promise<string>((resolve) => {
             resolveFirstWrite = resolve;
           }),
       );
@@ -259,19 +288,21 @@ describe('useOrdersStore', () => {
       expect(useOrdersStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.Done);
       // Пока первая запись не резолвилась, вторая не должна была стартовать.
       await flushMicrotasks();
-      expect(mockedService.updateOrderStatus).toHaveBeenCalledTimes(1);
+      expect(mockedService.enqueueStatusChange).toHaveBeenCalledTimes(1);
 
-      resolveFirstWrite();
+      resolveFirstWrite(MUTATION_ID);
       await flushMicrotasks();
 
-      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenNthCalledWith(
         1,
         'order-1',
+        ServiceOrderStatusEnum.New,
         ServiceOrderStatusEnum.InProgress,
       );
-      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenNthCalledWith(
         2,
         'order-1',
+        ServiceOrderStatusEnum.InProgress,
         ServiceOrderStatusEnum.Done,
       );
     });
@@ -279,9 +310,9 @@ describe('useOrdersStore', () => {
     it('отказ первой записи не блокирует следующее звено — вторая запись стартует, показан error-тост', async () => {
       resetStore([makeOrder({ status: ServiceOrderStatusEnum.New })]);
       // Первое звено (startWork → InProgress) реджектит, второе (completeWork → Done) — успешно.
-      mockedService.updateOrderStatus
+      mockedService.enqueueStatusChange
         .mockRejectedValueOnce(new Error('disk full'))
-        .mockResolvedValueOnce(undefined);
+        .mockResolvedValueOnce(MUTATION_ID);
 
       useOrdersStore.getState().startWork('order-1');
       useOrdersStore.getState().completeWork('order-1');
@@ -289,14 +320,16 @@ describe('useOrdersStore', () => {
       await flushMicrotasks();
 
       // Отказ звена не оборвал цепочку: вторая запись всё равно ушла в БД.
-      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenNthCalledWith(
         1,
         'order-1',
+        ServiceOrderStatusEnum.New,
         ServiceOrderStatusEnum.InProgress,
       );
-      expect(mockedService.updateOrderStatus).toHaveBeenNthCalledWith(
+      expect(mockedService.enqueueStatusChange).toHaveBeenNthCalledWith(
         2,
         'order-1',
+        ServiceOrderStatusEnum.InProgress,
         ServiceOrderStatusEnum.Done,
       );
       // Об отказе персиста пользователю сообщил error-тост.
@@ -506,7 +539,7 @@ describe('useOrdersStore', () => {
   describe('syncOrders', () => {
     it('успешный pull: гидрирует orders из БД, syncing переключается true → false', async () => {
       let resolvePull: () => void = () => undefined;
-      mockedPullOrders.mockImplementation(
+      mockedSyncCycle.mockImplementation(
         () =>
           new Promise<void>((resolve) => {
             resolvePull = resolve;
@@ -524,9 +557,9 @@ describe('useOrdersStore', () => {
       expect(useOrdersStore.getState().orders).toEqual([makeOrder()]);
     });
 
-    it('guard: повторный вызов, пока синк уже идёт, — no-op (не дублирует pullOrders)', async () => {
+    it('guard: повторный вызов, пока синк уже идёт, — no-op (не дублирует syncCycle)', async () => {
       let resolvePull: () => void = () => undefined;
-      mockedPullOrders.mockImplementation(
+      mockedSyncCycle.mockImplementation(
         () =>
           new Promise<void>((resolve) => {
             resolvePull = resolve;
@@ -536,7 +569,7 @@ describe('useOrdersStore', () => {
 
       const first = useOrdersStore.getState().syncOrders();
       await useOrdersStore.getState().syncOrders();
-      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+      expect(mockedSyncCycle).toHaveBeenCalledTimes(1);
 
       resolvePull();
       await first;
@@ -547,13 +580,13 @@ describe('useOrdersStore', () => {
 
       await useOrdersStore.getState().syncOrders();
 
-      expect(mockedPullOrders).not.toHaveBeenCalled();
+      expect(mockedSyncCycle).not.toHaveBeenCalled();
       expect(useOrdersStore.getState().syncing).toBe(false);
     });
 
     it('ошибка pull не стирает локальные данные — orders остаются как есть, только лог + тост', async () => {
       resetStore([makeOrder({ id: 'existing-order' })]);
-      mockedPullOrders.mockRejectedValue(new Error('network down'));
+      mockedSyncCycle.mockRejectedValue(new Error('network down'));
 
       await useOrdersStore.getState().syncOrders();
 
@@ -563,9 +596,9 @@ describe('useOrdersStore', () => {
       expect(useToastStore.getState().toasts).toMatchObject([{ variant: ToastVariantEnum.Error }]);
     });
 
-    it('STRESS_TEST: pullOrders не вызывается', async () => {
+    it('STRESS_TEST: syncCycle не вызывается', async () => {
       let stressStore!: typeof useOrdersStore;
-      let stressPullOrders!: jest.Mock;
+      let stressSyncCycle!: jest.Mock;
 
       jest.isolateModules(() => {
         jest.doMock('../stress', () => ({
@@ -577,12 +610,12 @@ describe('useOrdersStore', () => {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         stressStore = require('../use-orders-store').useOrdersStore;
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        stressPullOrders = require('../../api').pullOrders;
+        stressSyncCycle = require('../../api').syncCycle;
       });
 
       await stressStore.getState().syncOrders();
 
-      expect(stressPullOrders).not.toHaveBeenCalled();
+      expect(stressSyncCycle).not.toHaveBeenCalled();
     });
   });
 
@@ -596,7 +629,7 @@ describe('useOrdersStore', () => {
       expect(mockedService.clearDatabase).not.toHaveBeenCalled();
       expect(mockedCancelAllReminders).not.toHaveBeenCalled();
       expect(mockedService.setSyncStateValue).not.toHaveBeenCalled();
-      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+      expect(mockedSyncCycle).toHaveBeenCalledTimes(1);
     });
 
     it('смена пользователя — wipe: clearDatabase + cancelAllReminders + запись нового sync.lastUserId', async () => {
@@ -612,7 +645,7 @@ describe('useOrdersStore', () => {
         SyncStateKeyEnum.LastUserId,
         'user-2',
       );
-      expect(mockedPullOrders).toHaveBeenCalledTimes(1);
+      expect(mockedSyncCycle).toHaveBeenCalledTimes(1);
     });
 
     it('первый запуск (sync.lastUserId ещё не задан) трактуется как смена пользователя — wipe', async () => {
@@ -631,7 +664,7 @@ describe('useOrdersStore', () => {
     it('ошибка pull (внутри итогового syncOrders) не бросает — bootstrapSync завершается штатно', async () => {
       mockedService.getSyncStateValue.mockResolvedValue('user-1');
       mockedService.getOrders.mockResolvedValue([]);
-      mockedPullOrders.mockRejectedValue(new Error('network down'));
+      mockedSyncCycle.mockRejectedValue(new Error('network down'));
 
       await expect(useOrdersStore.getState().bootstrapSync('user-1')).resolves.toBeUndefined();
     });
@@ -654,10 +687,10 @@ describe('useOrdersStore', () => {
       await first;
     });
 
-    it('STRESS_TEST: getSyncStateValue/pullOrders не вызываются', async () => {
+    it('STRESS_TEST: getSyncStateValue/syncCycle не вызываются', async () => {
       let stressStore!: typeof useOrdersStore;
       let stressService!: typeof mockedService;
-      let stressPullOrders!: jest.Mock;
+      let stressSyncCycle!: jest.Mock;
 
       jest.isolateModules(() => {
         jest.doMock('../stress', () => ({
@@ -671,13 +704,13 @@ describe('useOrdersStore', () => {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         stressService = require('../../api').orderDatabaseService;
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        stressPullOrders = require('../../api').pullOrders;
+        stressSyncCycle = require('../../api').syncCycle;
       });
 
       await stressStore.getState().bootstrapSync('user-1');
 
       expect(stressService.getSyncStateValue).not.toHaveBeenCalled();
-      expect(stressPullOrders).not.toHaveBeenCalled();
+      expect(stressSyncCycle).not.toHaveBeenCalled();
     });
   });
 
@@ -753,7 +786,7 @@ describe('useOrdersStore', () => {
 
       stressStore.getState().startWork('stress-0');
       expect(stressStore.getState().orders[0].status).toBe(ServiceOrderStatusEnum.InProgress);
-      expect(stressService.updateOrderStatus).not.toHaveBeenCalled();
+      expect(stressService.enqueueStatusChange).not.toHaveBeenCalled();
 
       // Фото добавляется/удаляется на InProgress-заявке (stress-0 после startWork) — иначе guard
       // статуса среагирует раньше STRESS-ветки и тест не проверит пропуск персиста.

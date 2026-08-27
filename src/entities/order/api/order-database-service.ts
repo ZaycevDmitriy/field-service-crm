@@ -3,11 +3,14 @@ import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
 import { isPhotoSyncStatus, PhotoSyncStatusEnum } from '../model/photo-sync-status';
-import type { IPullOrderFields } from '../model/pull-item-to-order';
+import type { IPullOrderFields, IPullPageOperation } from '../model/pull-item-to-order';
+import { SyncMutationTypeEnum } from '../model/sync-types';
+import type { IOutboxMutation, IOutboxMutationRow } from '../model/sync-types';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
 
 import { getDatabase } from '@/shared/lib/db';
 import { deleteFileQuietly } from '@/shared/lib/fs';
+import { createId } from '@/shared/lib/id';
 import { logger } from '@/shared/lib/logger';
 
 // Database-сервис заявок — деталь реализации слайса (наружу через публичный API не выносится).
@@ -18,7 +21,8 @@ import { logger } from '@/shared/lib/logger';
 // scheduled_at, slot_start, slot_end, created_at, updated_at) и синк-поля фото (server_photo_id,
 // sync_status, taken_at) — optional в домене до Phase 12 (пока заявки локальные, эти поля заполнит
 // первый pull). `latitude`/`longitude` — nullable (сервер допускает заявку без геокодированного
-// адреса). Таблицы `sync_outbox`/`sync_state` — только DDL, без CRUD (Phase 12/13). Схема
+// адреса). `sync_state` — CRUD с Phase 12 (курсор pull); `sync_outbox` — CRUD с Phase 13 (очередь
+// push-мутаций, см. enqueueStatusChange/getPendingMutations/applyPushVerdicts ниже). Схема
 // версионируется через `PRAGMA user_version`, миграция — вручную в initDatabase (migrateOrdersSchema).
 // Цепочка миграций схлопнута: установок v1 в природе нет (существующие — v1.3.0 = схема v2), поэтому
 // любой `user_version < 3` ведёт единой миграцией сразу на v3 (без промежуточного v1→v2 шага).
@@ -383,6 +387,69 @@ export const migrateOrdersSchema = async (database: SQLiteDatabase): Promise<voi
   }
 };
 
+// Единственное используемое в этой фазе значение колонки sync_outbox.state — константа вместо
+// строкового литерала на трёх местах (enqueue/getPending/count). Колонка задумана расширяемой
+// (будущие состояния очереди), но пока состояние ровно одно — полноценный enum избыточен.
+const OUTBOX_STATE_PENDING = 'pending';
+
+// Мапперы очереди push-мутаций (Phase 13, PDR client-sync §8, T-08…T-10). Только `status_change`
+// в этой фазе (photo_add — Phase 14) — неизвестный `type` строки трактуется как повреждённая
+// запись (skip + warn), не краш.
+const rowToOutboxMutation = (row: IOutboxMutationRow): IOutboxMutation | null => {
+  if (row.type !== SyncMutationTypeEnum.StatusChange) {
+    logger.warn(
+      '[orderDatabaseService.rowToOutboxMutation] Неизвестный type мутации, запись пропущена.',
+      {
+        mutationId: row.mutation_id,
+        type: row.type,
+      },
+    );
+
+    return null;
+  }
+
+  let payload: { to?: unknown; baseStatus?: unknown };
+  try {
+    payload = JSON.parse(row.payload_json) as { to?: unknown; baseStatus?: unknown };
+  } catch (error) {
+    logger.warn(
+      '[orderDatabaseService.rowToOutboxMutation] Битый payload_json, запись пропущена.',
+      {
+        mutationId: row.mutation_id,
+        error,
+      },
+    );
+
+    return null;
+  }
+
+  if (
+    typeof payload.to !== 'string' ||
+    typeof payload.baseStatus !== 'string' ||
+    !isServiceOrderStatus(payload.to) ||
+    !isServiceOrderStatus(payload.baseStatus)
+  ) {
+    logger.warn(
+      '[orderDatabaseService.rowToOutboxMutation] Невалидный статус в payload, запись пропущена.',
+      {
+        mutationId: row.mutation_id,
+        payload,
+      },
+    );
+
+    return null;
+  }
+
+  return {
+    mutationId: row.mutation_id,
+    type: SyncMutationTypeEnum.StatusChange,
+    orderId: row.order_id,
+    to: payload.to,
+    baseStatus: payload.baseStatus,
+    occurredAt: row.occurred_at,
+  };
+};
+
 // Ключи kv-таблицы sync_state (PDR client-sync §5, T-07/T-05): курсор pull и id пользователя
 // последнего bootstrap (детекция смены пользователя — см. useOrdersStore.bootstrapSync). Единая
 // константа вместо повторения строковых литералов на разных слоях (api + model/store).
@@ -405,77 +472,92 @@ const upsertSyncStateRow = (
     value,
   );
 
+// Общая часть UPSERT заявки (INSERT + ON CONFLICT DO UPDATE, без WHERE-guard) — переиспользуется
+// LWW-веткой pull (upsertOrder) и безусловной веткой push-конфликта (upsertOrderUnconditionally,
+// см. риск «Конфликтный снимок vs LWW-guard» в плане фазы).
+const ORDER_UPSERT_BASE_SQL = `INSERT INTO service_orders
+     (id, status, title, client, address, description, scheduled_time, scheduled_slot,
+      latitude, longitude, updated_seq, assigned_to, scheduled_at, slot_start, slot_end,
+      created_at, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(id) DO UPDATE SET
+     status = excluded.status,
+     title = excluded.title,
+     client = excluded.client,
+     address = excluded.address,
+     description = excluded.description,
+     scheduled_time = excluded.scheduled_time,
+     scheduled_slot = excluded.scheduled_slot,
+     latitude = excluded.latitude,
+     longitude = excluded.longitude,
+     updated_seq = excluded.updated_seq,
+     assigned_to = excluded.assigned_to,
+     scheduled_at = excluded.scheduled_at,
+     slot_start = excluded.slot_start,
+     slot_end = excluded.slot_end,
+     created_at = excluded.created_at,
+     updated_at = excluded.updated_at
+`;
+
+const orderToRow = (order: IPullOrderFields): IServiceOrderRow => ({
+  id: order.id,
+  status: order.status,
+  title: order.title,
+  client: order.client,
+  address: order.address,
+  description: order.description,
+  scheduled_time: order.scheduledTime,
+  scheduled_slot: order.scheduledSlot,
+  latitude: order.latitude,
+  longitude: order.longitude,
+  updated_seq: order.updatedSeq,
+  assigned_to: order.assignedTo ?? null,
+  scheduled_at: order.scheduledAt,
+  slot_start: order.slotStart,
+  slot_end: order.slotEnd,
+  created_at: order.createdAt,
+  updated_at: order.updatedAt,
+});
+
+const orderRowParams = (row: IServiceOrderRow): (string | number | null)[] => [
+  row.id,
+  row.status,
+  row.title,
+  row.client,
+  row.address,
+  row.description,
+  row.scheduled_time,
+  row.scheduled_slot,
+  row.latitude,
+  row.longitude,
+  row.updated_seq,
+  row.assigned_to,
+  row.scheduled_at,
+  row.slot_start,
+  row.slot_end,
+  row.created_at,
+  row.updated_at,
+];
+
 // UPSERT заявки с LWW-условием: DO UPDATE применяется, только если updated_seq страницы строго
 // больше локального (или локальный ещё NULL — заявка получена локально впервые). Условие делает
 // merge идемпотентным без предварительного SELECT — повторная поставка safety-lag хвоста (тот же
 // updated_seq) — no-op, не затирает локальные данные тем же или более старым снимком.
-const upsertOrder = (
+const upsertOrder = (database: SQLiteDatabase, order: IPullOrderFields): Promise<SQLiteRunResult> =>
+  database.runAsync(
+    `${ORDER_UPSERT_BASE_SQL}
+     WHERE excluded.updated_seq > service_orders.updated_seq OR service_orders.updated_seq IS NULL`,
+    ...orderRowParams(orderToRow(order)),
+  );
+
+// UPSERT заявки БЕЗ LWW-guard — конфликтный снимок (push, Phase 13) server-authoritative: заменяет
+// локальное состояние безусловно, даже если локальный updated_seq больше или равен. Переиспользовать
+// upsertOrder здесь нельзя — его WHERE-условие могло бы молча не применить снимок.
+const upsertOrderUnconditionally = (
   database: SQLiteDatabase,
   order: IPullOrderFields,
-): Promise<SQLiteRunResult> => {
-  const row: IServiceOrderRow = {
-    id: order.id,
-    status: order.status,
-    title: order.title,
-    client: order.client,
-    address: order.address,
-    description: order.description,
-    scheduled_time: order.scheduledTime,
-    scheduled_slot: order.scheduledSlot,
-    latitude: order.latitude,
-    longitude: order.longitude,
-    updated_seq: order.updatedSeq,
-    assigned_to: order.assignedTo ?? null,
-    scheduled_at: order.scheduledAt,
-    slot_start: order.slotStart,
-    slot_end: order.slotEnd,
-    created_at: order.createdAt,
-    updated_at: order.updatedAt,
-  };
-
-  return database.runAsync(
-    `INSERT INTO service_orders
-       (id, status, title, client, address, description, scheduled_time, scheduled_slot,
-        latitude, longitude, updated_seq, assigned_to, scheduled_at, slot_start, slot_end,
-        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       status = excluded.status,
-       title = excluded.title,
-       client = excluded.client,
-       address = excluded.address,
-       description = excluded.description,
-       scheduled_time = excluded.scheduled_time,
-       scheduled_slot = excluded.scheduled_slot,
-       latitude = excluded.latitude,
-       longitude = excluded.longitude,
-       updated_seq = excluded.updated_seq,
-       assigned_to = excluded.assigned_to,
-       scheduled_at = excluded.scheduled_at,
-       slot_start = excluded.slot_start,
-       slot_end = excluded.slot_end,
-       created_at = excluded.created_at,
-       updated_at = excluded.updated_at
-     WHERE excluded.updated_seq > service_orders.updated_seq OR service_orders.updated_seq IS NULL`,
-    row.id,
-    row.status,
-    row.title,
-    row.client,
-    row.address,
-    row.description,
-    row.scheduled_time,
-    row.scheduled_slot,
-    row.latitude,
-    row.longitude,
-    row.updated_seq,
-    row.assigned_to,
-    row.scheduled_at,
-    row.slot_start,
-    row.slot_end,
-    row.created_at,
-    row.updated_at,
-  );
-};
+): Promise<SQLiteRunResult> =>
+  database.runAsync(ORDER_UPSERT_BASE_SQL, ...orderRowParams(orderToRow(order)));
 
 // Удаляет заявку-tombstone: строки фото (FK на заявку — сначала они), возможные outbox-записи (push
 // мутаций — Phase 13, но защита от будущего дребезга уже здесь) и саму заявку. Возвращает уже
@@ -563,10 +645,116 @@ export const orderDatabaseService = {
     return orderRows.map((row) => rowToOrder(row, photosByOrderId.get(row.id) ?? []));
   },
 
-  // Персистит смену статуса заявки. Параметризованный UPDATE (без интерполяции).
-  async updateOrderStatus(orderId: string, status: ServiceOrderStatusEnum): Promise<void> {
+  // Транзакционный outbox-энкью (Phase 13, PDR client-sync §8, T-08): локальный UPDATE и запись
+  // мутации в очередь — одна exclusive-транзакция (принцип 5 плана фазы: оптимистичный UI и запись
+  // в outbox атомарны). mutationId генерируется здесь (не вызывающим) — единственная точка выпуска
+  // id мутации. Возвращает mutationId для лога вызывающего (useOrdersStore.persistStatus).
+  async enqueueStatusChange(
+    orderId: string,
+    from: ServiceOrderStatusEnum,
+    to: ServiceOrderStatusEnum,
+  ): Promise<string> {
     const database = await getDatabase();
-    await database.runAsync('UPDATE service_orders SET status = ? WHERE id = ?', status, orderId);
+    const mutationId = createId();
+    const payloadJson = JSON.stringify({ to, baseStatus: from });
+    const occurredAt = new Date().toISOString();
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      await txn.runAsync('UPDATE service_orders SET status = ? WHERE id = ?', to, orderId);
+      await txn.runAsync(
+        `INSERT INTO sync_outbox (mutation_id, type, order_id, payload_json, occurred_at, state, attempts)
+         VALUES (?, ?, ?, ?, ?, ?, 0)`,
+        mutationId,
+        SyncMutationTypeEnum.StatusChange,
+        orderId,
+        payloadJson,
+        occurredAt,
+        OUTBOX_STATE_PENDING,
+      );
+    });
+
+    logger.debug('[orderDatabaseService.enqueueStatusChange] Мутация поставлена в очередь.', {
+      orderId,
+      from,
+      to,
+      mutationId,
+    });
+
+    return mutationId;
+  },
+
+  // Отдаёт до `limit` мутаций очереди в хронологическом порядке записи (tie-break по rowid —
+  // occurred_at может совпасть в пределах миллисекунды). Битая строка (payload_json/type) —
+  // skip + warn внутри rowToOutboxMutation, не краш всего батча.
+  async getPendingMutations(limit: number): Promise<IOutboxMutation[]> {
+    const database = await getDatabase();
+    const rows = await database.getAllAsync<IOutboxMutationRow>(
+      'SELECT * FROM sync_outbox WHERE state = ? ORDER BY occurred_at ASC, rowid ASC LIMIT ?',
+      OUTBOX_STATE_PENDING,
+      limit,
+    );
+
+    const mutations: IOutboxMutation[] = [];
+    for (const row of rows) {
+      const mutation = rowToOutboxMutation(row);
+      if (mutation) {
+        mutations.push(mutation);
+      }
+    }
+
+    return mutations;
+  },
+
+  // Число мутаций в очереди — logout-гибрид (pages/settings, Phase 13, решение Q-02 PDR).
+  async countPendingMutations(): Promise<number> {
+    const database = await getDatabase();
+    const row = await database.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM sync_outbox WHERE state = ?',
+      OUTBOX_STATE_PENDING,
+    );
+
+    return row?.count ?? 0;
+  },
+
+  // Применяет вердикты push-батча одной exclusive-транзакцией: resolvedIds (applied/duplicate/
+  // rejected) удаляются из очереди; для каждого конфликтного снимка — безусловный upsert заявки
+  // (server-authoritative, см. upsertOrderUnconditionally) и удаление мутации конфликта.
+  async applyPushVerdicts(
+    resolvedIds: string[],
+    conflictSnapshots: { mutationId: string; order: IPullOrderFields }[],
+  ): Promise<void> {
+    const database = await getDatabase();
+
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      if (resolvedIds.length > 0) {
+        await txn.runAsync(
+          `DELETE FROM sync_outbox WHERE mutation_id IN (${resolvedIds.map(() => '?').join(', ')})`,
+          ...resolvedIds,
+        );
+      }
+      for (const { mutationId, order } of conflictSnapshots) {
+        await upsertOrderUnconditionally(txn, order);
+        await txn.runAsync('DELETE FROM sync_outbox WHERE mutation_id = ?', mutationId);
+      }
+    });
+
+    logger.debug('[orderDatabaseService.applyPushVerdicts] Вердикты применены.', {
+      resolved: resolvedIds.length,
+      conflicts: conflictSnapshots.length,
+    });
+  },
+
+  // Инкремент счётчика попыток при неудачном push-запросе (диагностика; лимит попыток и таймерный
+  // backoff в этой фазе не вводятся — см. sync-orchestrator.ts).
+  async incrementMutationAttempts(mutationIds: string[]): Promise<void> {
+    if (mutationIds.length === 0) {
+      return;
+    }
+    const database = await getDatabase();
+    await database.runAsync(
+      `UPDATE sync_outbox SET attempts = attempts + 1 WHERE mutation_id IN (${mutationIds.map(() => '?').join(', ')})`,
+      ...mutationIds,
+    );
   },
 
   // Добавляет фото к заявке. Отклонение от §14 `addOrderPhoto(photo)`: в IServiceOrderPhoto нет
@@ -643,35 +831,42 @@ export const orderDatabaseService = {
     await upsertSyncStateRow(database, key, value);
   },
 
-  // Применяет одну pull-страницу атомарно: LWW-upsert заявок, удаление tombstone-заявок (фото +
-  // outbox + сама заявка) и сдвиг курсора — одной withExclusiveTransactionAsync (курсор персистится
-  // только вместе с успешным применением страницы, иначе сбой посреди страницы увёл бы курсор вперёд
-  // данных). Ошибку не ловим: пробрасываем вызывающему (orderSyncService), который решает, что делать
-  // с частично применённым прогоном страниц (курсор уже применённых страниц сохранён — см. task 4).
-  // Возвращает URI удалённых фото и id удалённых заявок — вызывающий делает post-commit побочные
-  // эффекты (удаление файлов, отмена напоминаний).
+  // Применяет одну pull-страницу атомарно: операции (LWW-upsert заявки / удаление tombstone-заявки
+  // с фото и outbox) СТРОГО в порядке их следования — порядок задан общим потоком sync_seq
+  // (buildPullOperations) и значим: unassigned(seq N) + order(seq N+1) по одной заявке означает
+  // «сняли и вернули технику», а не «удалить». Сдвиг курсора — в той же
+  // withExclusiveTransactionAsync (курсор персистится только вместе с успешным применением
+  // страницы, иначе сбой посреди страницы увёл бы курсор вперёд данных). Ошибку не ловим:
+  // пробрасываем вызывающему (orderSyncService), который решает, что делать с частично применённым
+  // прогоном страниц (курсор уже применённых страниц сохранён — см. task 4). Возвращает URI
+  // удалённых фото и id удалённых заявок — вызывающий делает post-commit побочные эффекты
+  // (удаление файлов, отмена напоминаний).
   async applyPullPage(
-    orders: IPullOrderFields[],
-    tombstoneOrderIds: string[],
+    operations: IPullPageOperation[],
     nextCursor: number,
   ): Promise<IApplyPullPageResult> {
     const database = await getDatabase();
     const deletedPhotoUris: string[] = [];
+    const deletedOrderIds: string[] = [];
+    let upsertCount = 0;
 
     await database.withExclusiveTransactionAsync(async (txn) => {
-      for (const order of orders) {
-        await upsertOrder(txn, order);
-      }
-      for (const orderId of tombstoneOrderIds) {
-        deletedPhotoUris.push(...(await deleteTombstoneOrder(txn, orderId)));
+      for (const operation of operations) {
+        if (operation.kind === 'delete') {
+          deletedPhotoUris.push(...(await deleteTombstoneOrder(txn, operation.orderId)));
+          deletedOrderIds.push(operation.orderId);
+          continue;
+        }
+        await upsertOrder(txn, operation.order);
+        upsertCount += 1;
       }
       await upsertSyncStateRow(txn, SyncStateKeyEnum.Cursor, String(nextCursor));
     });
 
     logger.debug(
-      `[orderDatabaseService.applyPullPage] Страница применена: заявок ${orders.length}, tombstone ${tombstoneOrderIds.length}, курсор → ${nextCursor}.`,
+      `[orderDatabaseService.applyPullPage] Страница применена: заявок ${upsertCount}, tombstone ${deletedOrderIds.length}, курсор → ${nextCursor}.`,
     );
 
-    return { deletedPhotoUris, deletedOrderIds: tombstoneOrderIds };
+    return { deletedPhotoUris, deletedOrderIds };
   },
 };

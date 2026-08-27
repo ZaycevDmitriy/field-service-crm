@@ -1,6 +1,6 @@
-import { pullItemToOrder } from '../pull-item-to-order';
+import { buildPullOperations, pullItemToOrder } from '../pull-item-to-order';
 import { ServiceOrderStatusEnum } from '../order-status';
-import type { IPullOrderPayload } from '../sync-types';
+import type { IPullItem, IPullOrderPayload } from '../sync-types';
 
 import { logger } from '@/shared/lib/logger';
 
@@ -80,5 +80,47 @@ describe('pullItemToOrder', () => {
       expect.stringContaining('Невалидный статус'),
       expect.objectContaining({ orderId: 'order-1', status: 'Unknown' }),
     );
+  });
+});
+
+describe('buildPullOperations', () => {
+  const orderItem = (id: string, seq: number): IPullItem => ({
+    type: 'order',
+    seq,
+    order: { ...BASE_PAYLOAD, id, updatedSeq: seq },
+  });
+
+  const unassignedItem = (orderId: string, seq: number): IPullItem => ({
+    type: 'unassigned',
+    seq,
+    orderId,
+  });
+
+  it('сохраняет порядок sync_seq: tombstone и следующий за ним upsert той же заявки', () => {
+    const operations = buildPullOperations([unassignedItem('order-1', 1), orderItem('order-1', 2)]);
+
+    expect(operations).toEqual([
+      { kind: 'delete', orderId: 'order-1' },
+      { kind: 'upsert', order: expect.objectContaining({ id: 'order-1', updatedSeq: 2 }) },
+    ]);
+  });
+
+  it('элементы вне порядка seq сортируются: порядку канала не доверяем', () => {
+    const operations = buildPullOperations([orderItem('order-1', 5), unassignedItem('order-1', 3)]);
+
+    expect(operations.map((operation) => operation.kind)).toEqual(['delete', 'upsert']);
+  });
+
+  it('невалидный статус заявки — операция пропускается, tombstone остаётся', () => {
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const invalidItem: IPullItem = {
+      type: 'order',
+      seq: 2,
+      order: { ...BASE_PAYLOAD, id: 'order-bad', updatedSeq: 2, status: 'Unknown' },
+    };
+
+    const operations = buildPullOperations([unassignedItem('order-2', 1), invalidItem]);
+
+    expect(operations).toEqual([{ kind: 'delete', orderId: 'order-2' }]);
   });
 });

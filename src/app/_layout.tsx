@@ -1,9 +1,17 @@
+import NetInfo from '@react-native-community/netinfo';
+import {
+  focusManager,
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { type FC, useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, Platform, StyleSheet, View } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import {
   AndroidSoftInputModes,
   KeyboardController,
@@ -12,7 +20,7 @@ import {
 import 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useOrdersStore } from '@/entities/order';
+import { registerSyncRunner, requestSync, useOrdersStore } from '@/entities/order';
 import {
   getAccessToken,
   logout,
@@ -24,6 +32,7 @@ import {
 import { sweepOrphanPhotos } from '@/features/photo-capture';
 import { registerAuthBridge } from '@/shared/api';
 import { Spacing, useColorScheme } from '@/shared/config';
+import { logger } from '@/shared/lib/logger';
 import { configureNotifications } from '@/shared/lib/notifications';
 import { ToastVariantEnum, useToastStore } from '@/shared/model';
 import { Toast } from '@/shared/ui';
@@ -48,6 +57,26 @@ registerAuthBridge({
     useToastStore.getState().showToast(ToastVariantEnum.Info, 'Сессия истекла');
   },
 });
+
+// QueryClient — модульный singleton (не в рендере), дефолтный networkMode ('online') не
+// переопределяем (PDR client-sync §5). RQ в этой фазе — каркас: собственных useQuery/useMutation
+// нет (данными владеет SQLite), см. риски плана фазы.
+const queryClient = new QueryClient();
+
+// onlineManager ← netinfo, модульный уровень (официальный RN-паттерн TanStack Query v5, сверено
+// Context7 2026-07-22): в RN нет window-событий, проводка обязательна. Единый источник события
+// «сеть восстановлена» для триггера оркестратора — второй NetInfo-листенер не заводим (см. эффект
+// reconnect в RootLayout ниже, использует onlineManager.subscribe).
+onlineManager.setEventListener((setOnline) => {
+  return NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected);
+  });
+});
+
+// Связывает оркестратор синка (entities/order/api/sync-orchestrator) со стором — цикл импортов
+// store ↔ api предопределён (см. риск в плане фазы), поэтому оркестратор не импортирует стор
+// напрямую, а зовёт зарегистрированный раннер (тот же паттерн, что registerAuthBridge выше).
+registerSyncRunner(() => useOrdersStore.getState().syncOrders());
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -193,10 +222,10 @@ const RootLayout: FC = () => {
     });
   }, []);
 
-  // Триггер pull-синка (PDR client-sync §5, T-07): логин, restoreSession с уже валидной сессией и
+  // Триггер синка (PDR client-sync §5/§8, T-07…T-10): логин, restoreSession с уже валидной сессией и
   // смена пользователя — везде, где sessionStatus/user.id меняются на аутентифицированные. Дожидается
-  // dbReadyRef (bootstrap БД выше) — пуллить в несуществующую схему нельзя. Ошибка pull не блокирует
-  // вход: bootstrapSync сама не бросает (см. use-orders-store.ts) — офлайн-логин остаётся рабочим.
+  // dbReadyRef (bootstrap БД выше) — синковать в несуществующую схему нельзя. Ошибка внутри цикла не
+  // блокирует вход: bootstrapSync сама не бросает (см. use-orders-store.ts) — офлайн-логин рабочий.
   useEffect(() => {
     if (sessionStatus !== SessionStatusEnum.Authenticated || !userId) {
       return;
@@ -204,15 +233,52 @@ const RootLayout: FC = () => {
     dbReadyRef.current?.then(() => useOrdersStore.getState().bootstrapSync(userId));
   }, [sessionStatus, userId]);
 
+  // focusManager ← AppState (официальный RN-паттерн TanStack Query v5) + триггеры оркестратора
+  // (T8): переход в foreground и восстановление сети — оба гейтятся аутентифицированной сессией
+  // (не-реактивное чтение getState(), обработчики event-driven, не должны зависеть от рендеров).
+  // reconnect реагирует только на фронт offline→online (wasOnline) — второй NetInfo-листенер не
+  // заводим, единый источник — onlineManager (проводка от netinfo на модульном уровне выше).
+  useEffect(() => {
+    const isAuthenticatedNow = (): boolean =>
+      useSessionStore.getState().status === SessionStatusEnum.Authenticated;
+
+    const onAppStateChange = (status: AppStateStatus): void => {
+      if (Platform.OS !== 'web') {
+        focusManager.setFocused(status === 'active');
+      }
+      if (status === 'active' && isAuthenticatedNow()) {
+        logger.debug('[appLayout] Триггер синка.', { reason: 'appstate-active' });
+        void requestSync();
+      }
+    };
+    const appStateSubscription = AppState.addEventListener('change', onAppStateChange);
+
+    let wasOnline = onlineManager.isOnline();
+    const unsubscribeOnline = onlineManager.subscribe((isOnline) => {
+      if (isOnline && !wasOnline && isAuthenticatedNow()) {
+        logger.debug('[appLayout] Триггер синка.', { reason: 'reconnect' });
+        void requestSync();
+      }
+      wasOnline = isOnline;
+    });
+
+    return () => {
+      appStateSubscription.remove();
+      unsubscribeOnline();
+    };
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <KeyboardProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <RootNavigator />
-          <StatusBar style="auto" />
-          <Toaster />
-        </ThemeProvider>
-      </KeyboardProvider>
+      <QueryClientProvider client={queryClient}>
+        <KeyboardProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <RootNavigator />
+            <StatusBar style="auto" />
+            <Toaster />
+          </ThemeProvider>
+        </KeyboardProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 };

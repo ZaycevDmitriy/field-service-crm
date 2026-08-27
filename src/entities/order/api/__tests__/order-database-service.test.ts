@@ -12,9 +12,13 @@ import {
 } from '../order-database-service';
 import { ServiceOrderStatusEnum } from '../../model/order-status';
 import { PhotoSyncStatusEnum } from '../../model/photo-sync-status';
+import type { IPullOrderFields } from '../../model/pull-item-to-order';
 
 import { getDatabase } from '@/shared/lib/db';
 import { logger } from '@/shared/lib/logger';
+
+// UUID-мок (T5, Phase 13): enqueueStatusChange-тесты проверяют, что mutationId === createId().
+jest.mock('@/shared/lib/id', () => ({ createId: () => 'mock-id' }));
 
 const DOCUMENT_URI = 'file:///mock-document/';
 
@@ -58,6 +62,7 @@ const SCHEDULED_TIME = '09:00';
 const SCHEDULED_SLOT = '09:00 — 10:00';
 const RECORD_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 const VISIT_TIMESTAMP = '2026-01-02T09:00:00.000Z';
+const SLOT_END_TIMESTAMP = '2026-01-02T10:00:00.000Z';
 
 // Колонки схемы v2 (до Phase 11) и новые v3-колонки (курсор синка, владелец, канонические даты) —
 // имена держим отдельно от source-модуля намеренно: V3_ORDER_COLUMNS/V3_PHOTO_COLUMNS там приватные.
@@ -249,7 +254,7 @@ describe('rowToPhoto / rowToOrder — мапперы (round-trip v3)', () => {
       assigned_to: 'user-1',
       scheduled_at: VISIT_TIMESTAMP,
       slot_start: VISIT_TIMESTAMP,
-      slot_end: '2026-01-02T10:00:00.000Z',
+      slot_end: SLOT_END_TIMESTAMP,
       created_at: RECORD_TIMESTAMP,
       updated_at: RECORD_TIMESTAMP,
     };
@@ -259,7 +264,7 @@ describe('rowToPhoto / rowToOrder — мапперы (round-trip v3)', () => {
       assignedTo: 'user-1',
       scheduledAt: VISIT_TIMESTAMP,
       slotStart: VISIT_TIMESTAMP,
-      slotEnd: '2026-01-02T10:00:00.000Z',
+      slotEnd: SLOT_END_TIMESTAMP,
       createdAt: RECORD_TIMESTAMP,
       updatedAt: RECORD_TIMESTAMP,
     });
@@ -606,5 +611,280 @@ describe('orderDatabaseService.clearDatabase', () => {
     await orderDatabaseService.clearDatabase();
 
     expect(mockCallOrder).toContain(`delete:${DOCUMENT_URI}photos/photo-2.jpg`);
+  });
+});
+
+// Фикстура конфликтного снимка (applyPushVerdicts) — 15 обязательных полей IPullOrderFields
+// (без photos, см. Omit в pull-item-to-order.ts).
+const CONFLICT_ORDER: IPullOrderFields = {
+  id: 'order-1',
+  status: ServiceOrderStatusEnum.Cancelled,
+  title: 'Заявка',
+  client: 'Клиент',
+  address: 'Адрес',
+  description: '',
+  scheduledTime: SCHEDULED_TIME,
+  scheduledSlot: SCHEDULED_SLOT,
+  latitude: null,
+  longitude: null,
+  updatedSeq: 5,
+  scheduledAt: VISIT_TIMESTAMP,
+  slotStart: VISIT_TIMESTAMP,
+  slotEnd: SLOT_END_TIMESTAMP,
+  createdAt: RECORD_TIMESTAMP,
+  updatedAt: RECORD_TIMESTAMP,
+};
+
+interface IMockOutboxDatabase {
+  runAsync: jest.Mock;
+  getAllAsync: jest.Mock;
+  getFirstAsync: jest.Mock;
+  withExclusiveTransactionAsync: jest.Mock;
+}
+
+describe('orderDatabaseService.enqueueStatusChange', () => {
+  // Тот же самореференсный паттерн, что в initDatabase/getOrders: withExclusiveTransactionAsync
+  // вызывает колбэк с txn = сам mockDatabase, поэтому runAsync внутри транзакции виден напрямую.
+  const mockDatabase: IMockOutboxDatabase = {
+    runAsync: jest.fn(),
+    getAllAsync: jest.fn(),
+    getFirstAsync: jest.fn(),
+    withExclusiveTransactionAsync: jest.fn(async (task: (txn: unknown) => Promise<void>) =>
+      task(mockDatabase),
+    ),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDatabase.runAsync.mockResolvedValue({ changes: 1 });
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('UPDATE и INSERT — внутри одной exclusive-транзакции; payload_json корректен; mutationId — UUID-мок', async () => {
+    const mutationId = await orderDatabaseService.enqueueStatusChange(
+      'order-1',
+      ServiceOrderStatusEnum.New,
+      ServiceOrderStatusEnum.InProgress,
+    );
+
+    expect(mutationId).toBe('mock-id');
+    expect(mockDatabase.withExclusiveTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(mockDatabase.runAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('UPDATE service_orders SET status = ?'),
+      ServiceOrderStatusEnum.InProgress,
+      'order-1',
+    );
+
+    const insertCall = mockDatabase.runAsync.mock.calls[1];
+    expect(insertCall[0]).toEqual(expect.stringContaining('INSERT INTO sync_outbox'));
+    expect(insertCall[1]).toBe('mock-id');
+    expect(insertCall[2]).toBe('status_change');
+    expect(insertCall[3]).toBe('order-1');
+    expect(JSON.parse(insertCall[4] as string)).toEqual({
+      to: ServiceOrderStatusEnum.InProgress,
+      baseStatus: ServiceOrderStatusEnum.New,
+    });
+    expect(insertCall[6]).toBe('pending');
+  });
+});
+
+describe('orderDatabaseService.getPendingMutations', () => {
+  const mockDatabase = { getAllAsync: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('ORDER BY occurred_at, rowid — провалидированные мутации возвращаются доменными объектами', async () => {
+    mockDatabase.getAllAsync.mockResolvedValueOnce([
+      {
+        mutation_id: 'm1',
+        type: 'status_change',
+        order_id: 'order-1',
+        payload_json: JSON.stringify({
+          to: ServiceOrderStatusEnum.InProgress,
+          baseStatus: ServiceOrderStatusEnum.New,
+        }),
+        occurred_at: RECORD_TIMESTAMP,
+        state: 'pending',
+        attempts: 0,
+      },
+    ]);
+
+    const result = await orderDatabaseService.getPendingMutations(500);
+
+    expect(mockDatabase.getAllAsync).toHaveBeenCalledWith(
+      expect.stringContaining('ORDER BY occurred_at ASC, rowid ASC'),
+      'pending',
+      500,
+    );
+    expect(result).toEqual([
+      {
+        mutationId: 'm1',
+        type: 'status_change',
+        orderId: 'order-1',
+        to: ServiceOrderStatusEnum.InProgress,
+        baseStatus: ServiceOrderStatusEnum.New,
+        occurredAt: RECORD_TIMESTAMP,
+      },
+    ]);
+  });
+
+  it('битый payload_json — скип + warn, остальные вернулись', async () => {
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    mockDatabase.getAllAsync.mockResolvedValueOnce([
+      {
+        mutation_id: 'bad',
+        type: 'status_change',
+        order_id: 'order-1',
+        payload_json: 'не-json',
+        occurred_at: 't1',
+        state: 'pending',
+        attempts: 0,
+      },
+      {
+        mutation_id: 'good',
+        type: 'status_change',
+        order_id: 'order-2',
+        payload_json: JSON.stringify({
+          to: ServiceOrderStatusEnum.Done,
+          baseStatus: ServiceOrderStatusEnum.InProgress,
+        }),
+        occurred_at: 't2',
+        state: 'pending',
+        attempts: 0,
+      },
+    ]);
+
+    const result = await orderDatabaseService.getPendingMutations(500);
+
+    expect(result).toEqual([
+      {
+        mutationId: 'good',
+        type: 'status_change',
+        orderId: 'order-2',
+        to: ServiceOrderStatusEnum.Done,
+        baseStatus: ServiceOrderStatusEnum.InProgress,
+        occurredAt: 't2',
+      },
+    ]);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('невалидный статус в payload — скип + warn', async () => {
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    mockDatabase.getAllAsync.mockResolvedValueOnce([
+      {
+        mutation_id: 'bad-status',
+        type: 'status_change',
+        order_id: 'order-1',
+        payload_json: JSON.stringify({ to: 'Unknown', baseStatus: ServiceOrderStatusEnum.New }),
+        occurred_at: 't1',
+        state: 'pending',
+        attempts: 0,
+      },
+    ]);
+
+    const result = await orderDatabaseService.getPendingMutations(500);
+
+    expect(result).toEqual([]);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('orderDatabaseService.countPendingMutations', () => {
+  const mockDatabase = { getFirstAsync: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('возвращает count из запроса', async () => {
+    mockDatabase.getFirstAsync.mockResolvedValueOnce({ count: 3 });
+
+    await expect(orderDatabaseService.countPendingMutations()).resolves.toBe(3);
+    expect(mockDatabase.getFirstAsync).toHaveBeenCalledWith(expect.any(String), 'pending');
+  });
+
+  it('нет строки результата — 0', async () => {
+    mockDatabase.getFirstAsync.mockResolvedValueOnce(null);
+
+    await expect(orderDatabaseService.countPendingMutations()).resolves.toBe(0);
+  });
+});
+
+describe('orderDatabaseService.applyPushVerdicts', () => {
+  const mockDatabase: IMockOutboxDatabase = {
+    runAsync: jest.fn(),
+    getAllAsync: jest.fn(),
+    getFirstAsync: jest.fn(),
+    withExclusiveTransactionAsync: jest.fn(async (task: (txn: unknown) => Promise<void>) =>
+      task(mockDatabase),
+    ),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDatabase.runAsync.mockResolvedValue({ changes: 1 });
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('resolvedIds: один DELETE ... IN (...) плейсхолдерами', async () => {
+    await orderDatabaseService.applyPushVerdicts(['m1', 'm2'], []);
+
+    expect(mockDatabase.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM sync_outbox WHERE mutation_id IN (?, ?)'),
+      'm1',
+      'm2',
+    );
+  });
+
+  it('resolvedIds пуст и конфликтов нет — runAsync не вызывается', async () => {
+    await orderDatabaseService.applyPushVerdicts([], []);
+
+    expect(mockDatabase.runAsync).not.toHaveBeenCalled();
+  });
+
+  it('конфликтный снимок: безусловный upsert (без WHERE updated_seq) + удаление мутации конфликта', async () => {
+    await orderDatabaseService.applyPushVerdicts([], [{ mutationId: 'm3', order: CONFLICT_ORDER }]);
+
+    const upsertCall = mockDatabase.runAsync.mock.calls.find((call) =>
+      (call[0] as string).includes('INSERT INTO service_orders'),
+    );
+    expect(upsertCall).toBeDefined();
+    expect(upsertCall?.[0]).not.toEqual(expect.stringContaining('WHERE excluded.updated_seq'));
+    expect(mockDatabase.runAsync).toHaveBeenCalledWith(
+      'DELETE FROM sync_outbox WHERE mutation_id = ?',
+      'm3',
+    );
+  });
+});
+
+describe('orderDatabaseService.incrementMutationAttempts', () => {
+  const mockDatabase = { runAsync: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDatabase.runAsync.mockResolvedValue({ changes: 1 });
+    mockedGetDatabase.mockResolvedValue(mockDatabase as unknown as SQLiteDatabase);
+  });
+
+  it('UPDATE attempts = attempts + 1 WHERE mutation_id IN (...)', async () => {
+    await orderDatabaseService.incrementMutationAttempts(['m1', 'm2']);
+
+    expect(mockDatabase.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE sync_outbox SET attempts = attempts + 1'),
+      'm1',
+      'm2',
+    );
+  });
+
+  it('пустой массив — runAsync не вызывается', async () => {
+    await orderDatabaseService.incrementMutationAttempts([]);
+
+    expect(mockDatabase.runAsync).not.toHaveBeenCalled();
   });
 });

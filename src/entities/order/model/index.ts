@@ -12,8 +12,8 @@ export {
   type IOrderStatusColors,
 } from './order-status-colors';
 export { useOrderStatusColors } from './use-order-status-colors';
-// Внутренние типы/маппер pull-контракта синка (PDR client-sync §5, T-07) — деталь слайса, наружу
-// (entities/order/index.ts) намеренно не переэкспортируются.
+// Внутренние типы/маппер pull/push-контракта синка (PDR client-sync §5/§8, T-07…T-10) — деталь
+// слайса, наружу (entities/order/index.ts) намеренно не переэкспортируются.
 export {
   isPullUnassignedItem,
   type IPullItem,
@@ -22,5 +22,19 @@ export {
   type IPullOrderPhotoItem,
   type IPullOrdersResponse,
   type IPullUnassignedItem,
+  SyncMutationTypeEnum,
+  type IStatusChangeMutation,
+  type IPushMutationsRequest,
+  MutationVerdictEnum,
+  type IConflictOrderSnapshot,
+  type IMutationVerdict,
+  type IPushMutationsResponse,
+  type IOutboxMutationRow,
+  type IOutboxMutation,
 } from './sync-types';
-export { pullItemToOrder, type IPullOrderFields } from './pull-item-to-order';
+export {
+  pullItemToOrder,
+  buildPullOperations,
+  type IPullOrderFields,
+  type IPullPageOperation,
+} from './pull-item-to-order';

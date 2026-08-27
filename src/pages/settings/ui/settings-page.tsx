@@ -1,12 +1,13 @@
-import { type FC, useMemo } from 'react';
+import { type FC, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useOrdersStore } from '@/entities/order';
+import { countPendingMutations, pushMutations, useOrdersStore } from '@/entities/order';
 import { logout, UserRoleLabel, useSessionStore } from '@/entities/session';
 import { UpdateStatusBadge, UpdateStatusHint, useAppUpdates } from '@/features/app-updates';
 import { Radius, Spacing, useColors } from '@/shared/config';
 import { formatDateTime } from '@/shared/lib/date';
+import { logger } from '@/shared/lib/logger';
 import { cancelAllReminders } from '@/shared/lib/notifications';
 import { Button, DiagnosticCard, DiagnosticRow, IconSymbol, Screen, Text } from '@/shared/ui';
 
@@ -20,6 +21,9 @@ export const SettingsPage: FC = () => {
   const clearDatabase = useOrdersStore((state) => state.clearDatabase);
   const { diagnostics, isUpdatesEnabled, isChecking, errorMessage, checkForUpdate, reloadApp } =
     useAppUpdates();
+  // Временное состояние экрана (не Zustand): диалог логаута синхронизирует очередь перед выходом,
+  // кнопка «Выйти» задизейблена на это время (T6, PDR client-sync §8, решение Q-02).
+  const [isSyncingLogout, setIsSyncingLogout] = useState(false);
 
   const lastCheckLabel = useMemo(
     () =>
@@ -29,18 +33,86 @@ export const SettingsPage: FC = () => {
     [diagnostics.lastCheck],
   );
 
-  const handleLogout = () => {
-    Alert.alert('Выйти из аккаунта?', 'Вы сможете войти снова по email и паролю.', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Выйти',
-        style: 'destructive',
-        onPress: () => {
-          // Гибрид с outbox (запрос синхронизации перед выходом) — Phase 13, когда появится очередь.
-          void logout();
+  // Показывает финальный выбор при непустой очереди после (не)удачной попытки синка — «Отмена» /
+  // «Выйти с потерей N» (ровно 2 кнопки + Cancel уже не нужен здесь, диалог самостоятельный).
+  const showDiscardAlert = (remaining: number) => {
+    Alert.alert(
+      'Не удалось синхронизировать',
+      `Осталось несинхронизированных изменений: ${remaining}.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: `Выйти с потерей ${remaining} изменений`,
+          style: 'destructive',
+          onPress: () => void logout(),
         },
-      },
-    ]);
+      ],
+    );
+  };
+
+  // «Синхронизировать и выйти»: push ДО logout — после отзыва токенов дослать очередь нельзя
+  // (PDR T-04). Успех (очередь пуста) → logout(); неудача/остаток — явный выбор через showDiscardAlert.
+  const syncAndLogout = async (): Promise<void> => {
+    setIsSyncingLogout(true);
+    try {
+      await pushMutations();
+    } catch (error) {
+      logger.error('[settingsPage.handleLogout] Push перед выходом не удался.', error);
+    }
+
+    const remaining = await countPendingMutations();
+    setIsSyncingLogout(false);
+
+    if (remaining === 0) {
+      logger.info('[settingsPage.handleLogout] Логаут: очередь синхронизирована перед выходом.');
+      void logout();
+
+      return;
+    }
+    showDiscardAlert(remaining);
+  };
+
+  const handleLogout = async () => {
+    const pending = await countPendingMutations();
+
+    if (pending === 0) {
+      Alert.alert('Выйти из аккаунта?', 'Вы сможете войти снова по email и паролю.', [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Выйти', style: 'destructive', onPress: () => void logout() },
+      ]);
+
+      return;
+    }
+
+    // Ровно 3 кнопки — лимит Android (Alert.alert обрезает buttons.slice(0, 3), см. CLAUDE.md).
+    Alert.alert(
+      'Несинхронизированные изменения',
+      `Изменений в очереди: ${pending}. Синхронизировать перед выходом?`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Синхронизировать и выйти',
+          onPress: () => {
+            logger.info('[settingsPage.handleLogout] Логаут с непустым outbox.', {
+              pending,
+              choice: 'sync',
+            });
+            void syncAndLogout();
+          },
+        },
+        {
+          text: 'Выйти с потерей',
+          style: 'destructive',
+          onPress: () => {
+            logger.info('[settingsPage.handleLogout] Логаут с непустым outbox.', {
+              pending,
+              choice: 'discard',
+            });
+            void logout();
+          },
+        },
+      ],
+    );
   };
 
   const handleClearDatabase = () => {
@@ -87,6 +159,8 @@ export const SettingsPage: FC = () => {
               title="Выйти"
               variant="danger"
               fullWidth
+              loading={isSyncingLogout}
+              disabled={isSyncingLogout}
               onPress={handleLogout}
               testID="settings-logout-button"
               accessibilityLabel="Выйти из аккаунта"
