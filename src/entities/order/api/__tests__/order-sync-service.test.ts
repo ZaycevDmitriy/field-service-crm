@@ -173,14 +173,31 @@ describe('orderSyncService.pullOrders', () => {
     expect(mockedApplyPullPage).toHaveBeenCalledTimes(1);
   });
 
-  it('tombstone-элемент передаётся в applyPullPage отдельно от orders', async () => {
+  it('tombstone-элемент передаётся в applyPullPage операцией удаления', async () => {
     mockedGet.mockResolvedValueOnce({
       data: { items: [makeTombstoneItem('order-x', 1)], nextCursor: 1 },
     });
 
     await pullOrders();
 
-    expect(mockedApplyPullPage).toHaveBeenCalledWith([], ['order-x'], 1);
+    expect(mockedApplyPullPage).toHaveBeenCalledWith([{ kind: 'delete', orderId: 'order-x' }], 1);
+  });
+
+  it('порядок операций страницы соответствует seq: tombstone до upsert той же заявки', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        items: [makeTombstoneItem('order-x', 1), makeOrderItem('order-x', 2)],
+        nextCursor: 2,
+      },
+    });
+
+    await pullOrders();
+
+    const [operations] = mockedApplyPullPage.mock.calls[0] as [
+      { kind: string; orderId?: string }[],
+      number,
+    ];
+    expect(operations.map((operation) => operation.kind)).toEqual(['delete', 'upsert']);
   });
 
   it('post-commit: удаляет файлы фото и отменяет напоминания по результату applyPullPage', async () => {
@@ -198,7 +215,7 @@ describe('orderSyncService.pullOrders', () => {
     expect(mockedCancelReminders).toHaveBeenCalledWith('order-x');
   });
 
-  it('невалидный статус в order-элементе — заявка не попадает в applyPullPage.orders (skip)', async () => {
+  it('невалидный статус в order-элементе — операция не попадает в applyPullPage (skip)', async () => {
     jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const invalidItem: IPullItem = {
       type: 'order',
@@ -209,7 +226,7 @@ describe('orderSyncService.pullOrders', () => {
 
     await pullOrders();
 
-    expect(mockedApplyPullPage).toHaveBeenCalledWith([], [], 1);
+    expect(mockedApplyPullPage).toHaveBeenCalledWith([], 1);
   });
 
   it('предохранитель: останавливается после предела страниц и логирует warn', async () => {

@@ -32,4 +32,9 @@ export {
   type IOutboxMutationRow,
   type IOutboxMutation,
 } from './sync-types';
-export { pullItemToOrder, type IPullOrderFields } from './pull-item-to-order';
+export {
+  pullItemToOrder,
+  buildPullOperations,
+  type IPullOrderFields,
+  type IPullPageOperation,
+} from './pull-item-to-order';

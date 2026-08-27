@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { orderDatabaseService, SyncStateKeyEnum } from '../order-database-service';
 import { ServiceOrderStatusEnum } from '../../model/order-status';
-import type { IPullOrderFields } from '../../model/pull-item-to-order';
+import type { IPullOrderFields, IPullPageOperation } from '../../model/pull-item-to-order';
 
 import { getDatabase } from '@/shared/lib/db';
 
@@ -206,6 +206,10 @@ const makeOrder = (overrides: Partial<IPullOrderFields> = {}): IPullOrderFields 
   ...overrides,
 });
 
+const upsertOp = (order: IPullOrderFields): IPullPageOperation => ({ kind: 'upsert', order });
+
+const deleteOp = (orderId: string): IPullPageOperation => ({ kind: 'delete', orderId });
+
 describe('orderDatabaseService.applyPullPage', () => {
   let fakeDatabase: FakeDatabase;
 
@@ -216,13 +220,11 @@ describe('orderDatabaseService.applyPullPage', () => {
 
   it('LWW: заявка с большим updatedSeq применяется поверх существующей', async () => {
     await orderDatabaseService.applyPullPage(
-      [makeOrder({ updatedSeq: 1, status: ServiceOrderStatusEnum.New })],
-      [],
+      [upsertOp(makeOrder({ updatedSeq: 1, status: ServiceOrderStatusEnum.New }))],
       1,
     );
     await orderDatabaseService.applyPullPage(
-      [makeOrder({ updatedSeq: 2, status: ServiceOrderStatusEnum.InProgress })],
-      [],
+      [upsertOp(makeOrder({ updatedSeq: 2, status: ServiceOrderStatusEnum.InProgress }))],
       2,
     );
 
@@ -234,14 +236,12 @@ describe('orderDatabaseService.applyPullPage', () => {
 
   it('LWW: safety-lag replay (тот же updatedSeq) не применяется — идемпотентность мерджа', async () => {
     await orderDatabaseService.applyPullPage(
-      [makeOrder({ updatedSeq: 5, status: ServiceOrderStatusEnum.InProgress })],
-      [],
+      [upsertOp(makeOrder({ updatedSeq: 5, status: ServiceOrderStatusEnum.InProgress }))],
       5,
     );
     // Повторная выдача того же хвоста safety-lag: тот же updatedSeq, устаревший статус в payload.
     await orderDatabaseService.applyPullPage(
-      [makeOrder({ updatedSeq: 5, status: ServiceOrderStatusEnum.New })],
-      [],
+      [upsertOp(makeOrder({ updatedSeq: 5, status: ServiceOrderStatusEnum.New }))],
       5,
     );
 
@@ -252,11 +252,11 @@ describe('orderDatabaseService.applyPullPage', () => {
   });
 
   it('идемпотентность: повторное применение той же страницы не меняет состояние', async () => {
-    const page = [makeOrder({ updatedSeq: 3 })];
-    await orderDatabaseService.applyPullPage(page, [], 3);
+    const page = [upsertOp(makeOrder({ updatedSeq: 3 }))];
+    await orderDatabaseService.applyPullPage(page, 3);
     const stateAfterFirst = new Map(fakeDatabase.orders);
 
-    await orderDatabaseService.applyPullPage(page, [], 3);
+    await orderDatabaseService.applyPullPage(page, 3);
 
     expect(fakeDatabase.orders).toEqual(stateAfterFirst);
   });
@@ -284,7 +284,7 @@ describe('orderDatabaseService.applyPullPage', () => {
     fakeDatabase.photos.push({ id: 'photo-1', order_id: 'order-2', uri: 'photos/photo-1.jpg' });
     fakeDatabase.outbox.push({ mutation_id: 'mutation-1', order_id: 'order-2' });
 
-    const result = await orderDatabaseService.applyPullPage([], ['order-2'], 10);
+    const result = await orderDatabaseService.applyPullPage([deleteOp('order-2')], 10);
 
     expect(fakeDatabase.orders.has('order-2')).toBe(false);
     expect(fakeDatabase.photos).toHaveLength(0);
@@ -294,14 +294,33 @@ describe('orderDatabaseService.applyPullPage', () => {
   });
 
   it('tombstone заявки без локальных фото — deletedPhotoUris пуст, orderId всё равно возвращён', async () => {
-    const result = await orderDatabaseService.applyPullPage([], ['order-3'], 11);
+    const result = await orderDatabaseService.applyPullPage([deleteOp('order-3')], 11);
 
     expect(result.deletedPhotoUris).toEqual([]);
     expect(result.deletedOrderIds).toEqual(['order-3']);
   });
 
+  it('переназначение в одной странице: tombstone(seq N) до upsert(seq N+1) — заявка остаётся', async () => {
+    await orderDatabaseService.applyPullPage(
+      [deleteOp('order-1'), upsertOp(makeOrder({ id: 'order-1', updatedSeq: 2 }))],
+      2,
+    );
+
+    expect(fakeDatabase.orders.get('order-1')).toMatchObject({ updated_seq: 2 });
+  });
+
+  it('снятие в одной странице: upsert(seq N) до tombstone(seq N+1) — заявка удаляется', async () => {
+    const result = await orderDatabaseService.applyPullPage(
+      [upsertOp(makeOrder({ id: 'order-1', updatedSeq: 2 })), deleteOp('order-1')],
+      3,
+    );
+
+    expect(fakeDatabase.orders.has('order-1')).toBe(false);
+    expect(result.deletedOrderIds).toEqual(['order-1']);
+  });
+
   it('курсор персистится в sync_state под ключом SyncStateKeyEnum.Cursor', async () => {
-    await orderDatabaseService.applyPullPage([], [], 42);
+    await orderDatabaseService.applyPullPage([], 42);
 
     expect(fakeDatabase.syncState.get(SyncStateKeyEnum.Cursor)).toBe('42');
   });

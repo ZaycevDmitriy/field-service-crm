@@ -1,4 +1,4 @@
-import { isPullUnassignedItem, MutationVerdictEnum, pullItemToOrder } from '../model';
+import { buildPullOperations, MutationVerdictEnum, pullItemToOrder } from '../model';
 import type {
   IMutationVerdict,
   IOutboxMutation,
@@ -31,28 +31,6 @@ const PUSH_BATCH_LIMIT = 500;
 
 // Предохранитель от бесконечного цикла push — тот же принцип, что MAX_PAGES у pull.
 const MAX_PUSH_BATCHES = 100;
-
-// Разбирает одну pull-страницу на заявки (уже смаппленные в доменные поля мапером; невалидный
-// статус — skip внутри pullItemToOrder) и id заявок-tombstone.
-const splitPullItems = (
-  items: IPullOrdersResponse['items'],
-): { orders: IPullOrderFields[]; tombstoneOrderIds: string[] } => {
-  const orders: IPullOrderFields[] = [];
-  const tombstoneOrderIds: string[] = [];
-
-  for (const item of items) {
-    if (isPullUnassignedItem(item)) {
-      tombstoneOrderIds.push(item.orderId);
-      continue;
-    }
-    const order = pullItemToOrder(item.order);
-    if (order) {
-      orders.push(order);
-    }
-  }
-
-  return { orders, tombstoneOrderIds };
-};
 
 // Post-commit побочные эффекты применённой страницы: удаление файлов фото и отмена напоминаний
 // tombstone-заявок. Выполняются ПОСЛЕ коммита транзакции applyPullPage — при сбое транзакции файлы
@@ -97,10 +75,10 @@ export async function pullOrders(): Promise<void> {
     });
     const { items, nextCursor } = response.data;
 
-    const { orders, tombstoneOrderIds } = splitPullItems(items);
+    // Операции строятся с сохранением порядка sync_seq — применение вне порядка удаляло бы заявку,
+    // снятую и возвращённую технику в пределах одной страницы (см. buildPullOperations).
     const { deletedPhotoUris, deletedOrderIds } = await orderDatabaseService.applyPullPage(
-      orders,
-      tombstoneOrderIds,
+      buildPullOperations(items),
       nextCursor,
     );
     await applyPageSideEffects(deletedPhotoUris, deletedOrderIds);

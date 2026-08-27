@@ -3,7 +3,7 @@ import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
 
 import { isServiceOrderStatus, ServiceOrderStatusEnum } from '../model/order-status';
 import { isPhotoSyncStatus, PhotoSyncStatusEnum } from '../model/photo-sync-status';
-import type { IPullOrderFields } from '../model/pull-item-to-order';
+import type { IPullOrderFields, IPullPageOperation } from '../model/pull-item-to-order';
 import { SyncMutationTypeEnum } from '../model/sync-types';
 import type { IOutboxMutation, IOutboxMutationRow } from '../model/sync-types';
 import type { IServiceOrder, IServiceOrderPhoto } from '../model/types';
@@ -831,35 +831,42 @@ export const orderDatabaseService = {
     await upsertSyncStateRow(database, key, value);
   },
 
-  // Применяет одну pull-страницу атомарно: LWW-upsert заявок, удаление tombstone-заявок (фото +
-  // outbox + сама заявка) и сдвиг курсора — одной withExclusiveTransactionAsync (курсор персистится
-  // только вместе с успешным применением страницы, иначе сбой посреди страницы увёл бы курсор вперёд
-  // данных). Ошибку не ловим: пробрасываем вызывающему (orderSyncService), который решает, что делать
-  // с частично применённым прогоном страниц (курсор уже применённых страниц сохранён — см. task 4).
-  // Возвращает URI удалённых фото и id удалённых заявок — вызывающий делает post-commit побочные
-  // эффекты (удаление файлов, отмена напоминаний).
+  // Применяет одну pull-страницу атомарно: операции (LWW-upsert заявки / удаление tombstone-заявки
+  // с фото и outbox) СТРОГО в порядке их следования — порядок задан общим потоком sync_seq
+  // (buildPullOperations) и значим: unassigned(seq N) + order(seq N+1) по одной заявке означает
+  // «сняли и вернули технику», а не «удалить». Сдвиг курсора — в той же
+  // withExclusiveTransactionAsync (курсор персистится только вместе с успешным применением
+  // страницы, иначе сбой посреди страницы увёл бы курсор вперёд данных). Ошибку не ловим:
+  // пробрасываем вызывающему (orderSyncService), который решает, что делать с частично применённым
+  // прогоном страниц (курсор уже применённых страниц сохранён — см. task 4). Возвращает URI
+  // удалённых фото и id удалённых заявок — вызывающий делает post-commit побочные эффекты
+  // (удаление файлов, отмена напоминаний).
   async applyPullPage(
-    orders: IPullOrderFields[],
-    tombstoneOrderIds: string[],
+    operations: IPullPageOperation[],
     nextCursor: number,
   ): Promise<IApplyPullPageResult> {
     const database = await getDatabase();
     const deletedPhotoUris: string[] = [];
+    const deletedOrderIds: string[] = [];
+    let upsertCount = 0;
 
     await database.withExclusiveTransactionAsync(async (txn) => {
-      for (const order of orders) {
-        await upsertOrder(txn, order);
-      }
-      for (const orderId of tombstoneOrderIds) {
-        deletedPhotoUris.push(...(await deleteTombstoneOrder(txn, orderId)));
+      for (const operation of operations) {
+        if (operation.kind === 'delete') {
+          deletedPhotoUris.push(...(await deleteTombstoneOrder(txn, operation.orderId)));
+          deletedOrderIds.push(operation.orderId);
+          continue;
+        }
+        await upsertOrder(txn, operation.order);
+        upsertCount += 1;
       }
       await upsertSyncStateRow(txn, SyncStateKeyEnum.Cursor, String(nextCursor));
     });
 
     logger.debug(
-      `[orderDatabaseService.applyPullPage] Страница применена: заявок ${orders.length}, tombstone ${tombstoneOrderIds.length}, курсор → ${nextCursor}.`,
+      `[orderDatabaseService.applyPullPage] Страница применена: заявок ${upsertCount}, tombstone ${deletedOrderIds.length}, курсор → ${nextCursor}.`,
     );
 
-    return { deletedPhotoUris, deletedOrderIds: tombstoneOrderIds };
+    return { deletedPhotoUris, deletedOrderIds };
   },
 };

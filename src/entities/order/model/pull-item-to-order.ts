@@ -1,5 +1,5 @@
 import { isServiceOrderStatus } from './order-status';
-import type { IPullOrderPayload } from './sync-types';
+import { isPullUnassignedItem, type IPullItem, type IPullOrderPayload } from './sync-types';
 import type { IServiceOrder } from './types';
 
 import { formatScheduledSlot, formatScheduledTime } from '@/shared/lib/date';
@@ -63,4 +63,42 @@ export const pullItemToOrder = (
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,
   };
+};
+
+/**
+ * Операция применения одного pull-элемента к локальной БД: upsert заявки либо удаление
+ * (tombstone переназначения). Страница применяется списком операций в порядке `seq` — заявка и её
+ * tombstone могут прийти в одной странице (сняли с техника и назначили обратно), и итог зависит
+ * от того, какой элемент в потоке `sync_seq` последний.
+ */
+export type IPullPageOperation =
+  | { kind: 'upsert'; order: IPullOrderFields }
+  | { kind: 'delete'; orderId: string };
+
+/**
+ * Строит операции применения страницы pull, сохраняя порядок общего потока `sync_seq`.
+ *
+ * Порядок значим: страница может содержать `unassigned(seq N)` и `order(seq N+1)` по одной заявке,
+ * и применение «сначала все upsert, потом все tombstone» удалило бы заявку, которую сервер вернул
+ * технику. Элементы сортируются по `seq` явно: контракт обещает возрастающий порядок, но данные
+ * приходят из сети — на порядок канала не полагаемся (та же граница, что валидация статуса в pullItemToOrder).
+ *
+ * Невалидный статус заявки — элемент пропускается (см. pullItemToOrder), tombstone-элементы
+ * проходят всегда: у них нет полезной нагрузки, которую можно не распознать.
+ */
+export const buildPullOperations = (items: IPullItem[]): IPullPageOperation[] => {
+  const operations: IPullPageOperation[] = [];
+
+  for (const item of [...items].sort((a, b) => a.seq - b.seq)) {
+    if (isPullUnassignedItem(item)) {
+      operations.push({ kind: 'delete', orderId: item.orderId });
+      continue;
+    }
+    const order = pullItemToOrder(item.order);
+    if (order) {
+      operations.push({ kind: 'upsert', order });
+    }
+  }
+
+  return operations;
 };
